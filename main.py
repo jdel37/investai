@@ -22,6 +22,58 @@ try:
 except ImportError:
     HAS_NX = False
 
+try:
+    import yfinance as yf
+    HAS_YF = True
+except ImportError:
+    HAS_YF = False
+
+# ─── HIGH-IMPACT PERSONS ─────────────────────────────────────────────────────
+HIGH_IMPACT_PERSONS = {
+    # US Politics / Government
+    "Trump","Biden","Harris","Bessent","Rubio","Pelosi","Schumer","McCarthy",
+    "Obama","Clinton","Bush",
+    # Central Banks
+    "Powell","Yellen","Lagarde","Ueda","Bailey","Waller","Daly","Williams",
+    "Bernanke","Draghi","Trichet",
+    # World Leaders
+    "Xi","Putin","Modi","Macron","Scholz","Sunak","Meloni","Milei","Lula",
+    "Erdogan","MBS","Netanyahu","Zelensky","Kim",
+    # Finance / Investing legends
+    "Buffett","Munger","Dimon","Dalio","Ackman","Icahn","Soros","Griffin",
+    "Simons","Marks","Tepper","Druckenmiller","Bass","Burry","Einhorn",
+    # Tech CEOs
+    "Musk","Altman","Zuckerberg","Bezos","Cook","Huang","Nadella","Pichai",
+    "Benioff","Ellison","Gates","Page","Brin","Thiel","Andreessen",
+    # Energy / Commodities
+    "Aramco","OPEC","Wirth","Woods",
+    # Economists
+    "Roubini","Krugman","Summers","Shiller","Rogoff","Stiglitz","Piketty",
+}
+
+# ─── SOURCE TIERS (veracity weighting) ───────────────────────────────────────
+TIER1_SOURCES = {
+    "Reuters Business","Reuters Markets","Reuters World",
+    "BBC Business","BBC World","FT","Bloomberg Markets","Bloomberg Tech",
+    "AP Business","AP Politics","WSJ Markets","WSJ Economy",
+    "The Economist Finance","Nikkei Asia",
+}
+TIER2_SOURCES = {
+    "CNBC Markets","CNBC Economy","CNBC Tech","CNBC Top News",
+    "MarketWatch Top","MarketWatch Markets","Foreign Policy","CFR",
+    "Brookings","SCMP Business","Deutsche Welle Biz","Barrons",
+    "Federal Reserve","ECB Speeches","IMF Blog","US Treasury","BIS Speeches",
+    "Peterson IIE","SEC Press","POLITICO Economy","Axios Markets",
+}
+
+# ─── MARKET TICKERS ──────────────────────────────────────────────────────────
+MARKET_TICKERS = {
+    "SPY":"S&P500","QQQ":"Nasdaq","^DJI":"DowJones","^VIX":"VIX",
+    "BTC-USD":"Bitcoin","ETH-USD":"Ethereum",
+    "GLD":"Oro","TLT":"Bonos30Y","DX-Y.NYB":"DolarIdx",
+    "CL=F":"Petróleo","GC=F":"OroFut","^TNX":"Yield10Y",
+}
+
 load_dotenv()
 
 GMAIL_USER = os.getenv("GMAIL_USER", "")
@@ -133,7 +185,97 @@ FEEDS = {
     "Reddit Economics":      "https://www.reddit.com/r/economics/.rss",
     "Reddit Stocks":         "https://www.reddit.com/r/stocks/.rss",
     "Reddit Crypto":         "https://www.reddit.com/r/CryptoCurrency/.rss",
+
+    # OFFICIAL / INSTITUTIONAL (alto impacto, declaraciones de líderes)
+    "Federal Reserve":       "https://www.federalreserve.gov/feeds/press_all.xml",
+    "ECB Speeches":          "https://www.ecb.europa.eu/rss/speeches.html",
+    "IMF Blog":              "https://www.imf.org/en/blogs/rss",
+    "World Bank Blog":       "https://blogs.worldbank.org/en/rss.xml",
+    "BIS Speeches":          "https://www.bis.org/rss/content_cbspeech.rss",
+    "US Treasury":           "https://home.treasury.gov/news/press-releases/rss.xml",
+    "Peterson IIE":          "https://www.piie.com/rss/all",
+    "SEC Press":             "https://efts.sec.gov/LATEST/search-index?q=%22press+release%22&dateRange=custom&startdt=2024-01-01&forms=8-K",
+    "OECD":                  "https://www.oecd.org/newsroom/rss.xml",
+
+    # PREMIUM INVESTMENT MEDIA
+    "WSJ Markets":           "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+    "WSJ Economy":           "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml",
+    "The Economist Finance": "https://www.economist.com/finance-and-economics/rss.xml",
+    "The Economist World":   "https://www.economist.com/the-world-this-week/rss.xml",
+    "AP Business":           "https://feeds.apnews.com/apnews/business",
+    "AP Politics":           "https://feeds.apnews.com/apnews/politics",
+    "Bloomberg Opinion":     "https://feeds.bloomberg.com/bview/news.rss",
+    "POLITICO Economy":      "https://rss.politico.com/economy.xml",
+    "POLITICO World":        "https://rss.politico.com/politics-news.xml",
+    "Axios Markets":         "https://api.axios.com/feed/",
+    "The Hill Finance":      "https://thehill.com/rss/syndicator/19110",
+    "Investopedia":          "https://www.investopedia.com/feeds/all.aspx",
+    "Motley Fool":           "https://www.fool.com/feeds/index.aspx",
+
+    # MACRO / THINK TANKS
+    "RAND":                  "https://www.rand.org/pubs/rss/all.xml",
+    "Atlantic Council":      "https://www.atlanticcouncil.org/feed/",
+    "Chatham House":         "https://www.chathamhouse.org/rss/news.xml",
+    "Harvard Belfer":        "https://www.belfercenter.org/rss.xml",
+    "Cato Institute":        "https://www.cato.org/rss.xml",
+
+    # TECH / AI (CEOs y movimientos que mueven mercados)
+    "OpenAI Blog":           "https://openai.com/blog/rss.xml",
+    "Google DeepMind":       "https://deepmind.google/discover/blog/rss.xml",
+    "Anthropic News":        "https://www.anthropic.com/news/rss",
+    "TechCrunch AI":         "https://techcrunch.com/category/artificial-intelligence/feed/",
+    "Semaphore Tech":        "https://semaphoreco.substack.com/feed",
+
+    # INVESTMENT ANALYSIS / INFLUENCERS
+    "Hussman Funds":         "https://hussmanfunds.com/rss/",
+    "Morningstar":           "https://www.morningstar.com/news/rss.xml",
+    "Seeking Alpha Premium": "https://seekingalpha.com/articles/investing-strategy.xml",
 }
+
+# Feeds de solo Tier-1 para check rápido de breaking news
+FEEDS_TIER1 = {k: v for k, v in FEEDS.items() if k in TIER1_SOURCES | TIER2_SOURCES}
+
+# ─── MARKET SNAPSHOT ─────────────────────────────────────────────────────────
+def fetch_market_snapshot() -> str:
+    if not HAS_YF:
+        return ""
+    parts = []
+    for ticker, name in MARKET_TICKERS.items():
+        try:
+            fi = yf.Ticker(ticker).fast_info
+            price = fi.last_price
+            prev = fi.previous_close
+            chg = (price / prev * 100 - 100) if prev and prev > 0 else 0
+            parts.append(f"{name}:{price:.2f}({chg:+.1f}%)")
+        except Exception:
+            pass
+    return " | ".join(parts)
+
+
+# ─── BREAKING NEWS DETECTION ─────────────────────────────────────────────────
+BREAKING_KEYWORDS = {
+    "crash","crisis","collapse","emergency","war","attack","sanctions","default",
+    "bankruptcy","recession","rate hike","rate cut","tariff","invasion","coup",
+    "explosion","assassination","shock","panic","surge","plunge","halt",
+}
+
+def detect_breaking_news(articles: list[dict]) -> str:
+    """Returns description of breaking news trigger, or empty string if none."""
+    hits = []
+    for art in articles:
+        src = art.get("source", "")
+        if src not in TIER1_SOURCES:
+            continue
+        text = (art["title"] + " " + art.get("summary", "")).lower()
+        kw_hits = [kw for kw in BREAKING_KEYWORDS if kw in text]
+        person_hits = [p for p in HIGH_IMPACT_PERSONS if p.lower() in text]
+        # Trigger: Tier-1 source + breaking keyword + high-impact person
+        if kw_hits and person_hits:
+            hits.append(f"{art['source']}: {art['title'][:80]}")
+    if len(hits) >= 2:
+        return "; ".join(hits[:3])
+    return ""
+
 
 # ─── FETCH ───────────────────────────────────────────────────────────────────
 SEM = asyncio.Semaphore(25)
@@ -184,7 +326,7 @@ async def gather_news() -> list[dict]:
 
 
 def build_corroboration_map(articles: list[dict]) -> dict:
-    """Count distinct sources per keyword entity. Returns top-30 consensus topics."""
+    """Count distinct sources per entity, weighted by source tier and high-impact status."""
     STOP = {
         "the","and","for","are","but","not","you","all","can","was","one","our",
         "out","had","him","his","how","its","who","did","get","has","may","new",
@@ -195,6 +337,9 @@ def build_corroboration_map(articles: list[dict]) -> dict:
         "high","low","than","next","show","week","days","more","make","take",
     }
     entity_sources: dict[str, set] = {}
+    entity_tier1: dict[str, int] = {}
+    entity_high_impact: dict[str, bool] = {}
+
     for art in articles:
         src = art["source"]
         text = art["title"] + " " + art.get("summary", "")
@@ -209,13 +354,22 @@ def build_corroboration_map(articles: list[dict]) -> dict:
                 entities.add(w)
         for e in entities:
             entity_sources.setdefault(e, set()).add(src)
+            if src in TIER1_SOURCES:
+                entity_tier1[e] = entity_tier1.get(e, 0) + 1
+            if any(p.lower() in e.lower() for p in HIGH_IMPACT_PERSONS):
+                entity_high_impact[e] = True
 
-    result = {
-        e: len(s)
-        for e, s in entity_sources.items()
-        if len(s) >= 4
-    }
-    top = sorted(result.items(), key=lambda x: -x[1])[:30]
+    # Score: base count + tier1 bonus + high-impact bonus
+    scored = {}
+    for e, srcs in entity_sources.items():
+        base = len(srcs)
+        if base < 3:
+            continue
+        t1_bonus = entity_tier1.get(e, 0) * 0.5
+        hi_bonus = 2.0 if entity_high_impact.get(e) else 0.0
+        scored[e] = round(base + t1_bonus + hi_bonus, 1)
+
+    top = sorted(scored.items(), key=lambda x: -x[1])[:30]
     return dict(top)
 
 
@@ -280,8 +434,10 @@ def build_entity_graph(articles: list[dict]):
         entities = [p for p in proper if p not in _NOISE_ENTITIES and len(p) > 3]
 
         for e in entities:
+            is_hi = any(p.lower() in e.lower() for p in HIGH_IMPACT_PERSONS)
             if not G.has_node(e):
-                G.add_node(e, mentions=0, sources=set(), type=_detect_entity_type(e))
+                etype = "high_impact" if is_hi else _detect_entity_type(e)
+                G.add_node(e, mentions=0, sources=set(), type=etype, high_impact=is_hi)
             G.nodes[e]["mentions"] += 1
             G.nodes[e]["sources"].add(src)
 
@@ -299,20 +455,30 @@ def build_entity_graph(articles: list[dict]):
 
 
 def _graph_context_for_gpt(G) -> str:
-    """Summarize top graph nodes for GPT prompt enrichment."""
+    """Summarize top graph nodes — high-impact persons first."""
     if not G or G.number_of_nodes() == 0:
         return ""
-    scored = sorted(
-        G.nodes(data=True),
-        key=lambda x: -len(x[1].get("sources", set()))
-    )[:12]
-    lines = ["Top entidades detectadas en el grafo de co-menciones:"]
-    for node, data in scored:
+    nodes = list(G.nodes(data=True))
+    # High-impact persons first, then by source count
+    hi = [(n, d) for n, d in nodes if d.get("high_impact")]
+    rest = [(n, d) for n, d in nodes if not d.get("high_impact")]
+    hi.sort(key=lambda x: -len(x[1].get("sources", set())))
+    rest.sort(key=lambda x: -len(x[1].get("sources", set())))
+    top = (hi[:6] + rest[:6])[:12]
+
+    lines = []
+    if hi:
+        lines.append(f"PERSONAS DE ALTO IMPACTO ({len(hi)} detectadas):")
+        for node, data in hi[:6]:
+            src_n = len(data.get("sources", set()))
+            neighbors = sorted(G[node].items(), key=lambda x: -x[1].get("weight", 0))[:3]
+            nbr_str = ", ".join(n for n, _ in neighbors) or "—"
+            lines.append(f"  ★ {node} — {src_n} fuentes → {nbr_str}")
+    lines.append("TOP ENTIDADES:")
+    for node, data in rest[:6]:
         src_n = len(data.get("sources", set()))
         deg = G.degree(node)
-        neighbors = sorted(G[node].items(), key=lambda x: -x[1].get("weight", 0))[:3]
-        nbr_str = ", ".join(n for n, _ in neighbors) or "—"
-        lines.append(f"  • {node} [{data.get('type','?')}] — {src_n} fuentes, {deg} conexiones → relacionado con: {nbr_str}")
+        lines.append(f"  • {node} [{data.get('type','?')}] — {src_n} fuentes, {deg} cx")
     return "\n".join(lines)
 
 
@@ -430,42 +596,57 @@ def send_buy_alert(investments: list[dict], generated_at: str) -> int:
         return 0
 
     # Build HTML email body
+    _RISK_COLOR = {"low": "#10b981", "medium": "#f59e0b", "high": "#ef4444"}
+    _TF_LABEL = {"short": "⚡ Corto plazo", "medium": "📅 Mediano plazo", "long": "🌳 Largo plazo"}
+
     rows = ""
     for inv in sorted(buys, key=lambda x: -x.get("priority", 0)):
         tickers = ", ".join(inv.get("examples", [])) or inv["asset"]
+        risk = inv.get("risk", "medium")
+        rc = _RISK_COLOR.get(risk, "#f59e0b")
+        tf = _TF_LABEL.get(inv.get("timeframe", "short"), "—")
+        target = inv.get("target", "—")
+        stop = inv.get("stop_loss", "—")
         rows += f"""
         <tr>
-          <td style="padding:12px;border-bottom:1px solid #1f2d45;font-weight:700;color:#e2e8f0">{inv['asset']}</td>
-          <td style="padding:12px;border-bottom:1px solid #1f2d45;color:#10b981;font-weight:700">▲ COMPRAR</td>
-          <td style="padding:12px;border-bottom:1px solid #1f2d45;color:#22d3ee">{inv.get('priority',0)}/10</td>
-          <td style="padding:12px;border-bottom:1px solid #1f2d45;color:#93c5fd">{tickers}</td>
-          <td style="padding:12px;border-bottom:1px solid #1f2d45;color:#94a3b8;font-size:12px">{inv.get('rationale','')[:200]}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #1f2d45">
+            <div style="font-weight:700;color:#e2e8f0;font-size:15px">{inv['asset']}</div>
+            <div style="font-size:11px;color:#93c5fd;margin-top:2px">{tickers}</div>
+          </td>
+          <td style="padding:10px 12px;border-bottom:1px solid #1f2d45;color:#22d3ee;font-size:22px;font-weight:800;text-align:center">{inv.get('priority',0)}<span style="font-size:11px;color:#64748b">/10</span></td>
+          <td style="padding:10px 12px;border-bottom:1px solid #1f2d45;color:{rc};font-weight:700;text-transform:uppercase;font-size:12px">{risk}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #1f2d45;color:#94a3b8;font-size:12px">{tf}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #1f2d45;color:#10b981;font-size:12px;font-weight:600">{target}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #1f2d45;color:#ef4444;font-size:12px">{stop}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #1f2d45;color:#94a3b8;font-size:12px;max-width:260px">{inv.get('rationale','')[:220]}</td>
         </tr>"""
 
     html = f"""
-    <div style="font-family:-apple-system,sans-serif;background:#0a0e1a;color:#e2e8f0;padding:32px;max-width:800px">
+    <div style="font-family:-apple-system,sans-serif;background:#0a0e1a;color:#e2e8f0;padding:32px;max-width:920px">
       <h1 style="color:#3b82f6;margin-bottom:4px">📡 InvestAI — Señales de Compra</h1>
       <p style="color:#64748b;margin-bottom:24px">{generated_at}</p>
       <p style="margin-bottom:16px">{len(buys)} señal(es) BUY con prioridad ≥ {ALERT_MIN_PRIORITY}:</p>
       <table style="width:100%;border-collapse:collapse;background:#111827;border-radius:8px;overflow:hidden">
         <thead>
           <tr style="background:#1c2536">
-            <th style="padding:12px;text-align:left;color:#64748b;font-size:12px">ACTIVO</th>
-            <th style="padding:12px;text-align:left;color:#64748b;font-size:12px">SEÑAL</th>
-            <th style="padding:12px;text-align:left;color:#64748b;font-size:12px">PRIORIDAD</th>
-            <th style="padding:12px;text-align:left;color:#64748b;font-size:12px">TICKERS</th>
-            <th style="padding:12px;text-align:left;color:#64748b;font-size:12px">RAZÓN</th>
+            <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:11px">ACTIVO / TICKERS</th>
+            <th style="padding:10px 12px;text-align:center;color:#64748b;font-size:11px">PRIORIDAD</th>
+            <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:11px">RIESGO</th>
+            <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:11px">PLAZO</th>
+            <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:11px">TARGET</th>
+            <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:11px">STOP LOSS</th>
+            <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:11px">RAZÓN</th>
           </tr>
         </thead>
         <tbody>{rows}</tbody>
       </table>
       <p style="color:#64748b;font-size:11px;margin-top:24px">
-        Este análisis es solo informativo. No constituye asesoramiento financiero.
+        Análisis solo informativo. No constituye asesoramiento financiero.
       </p>
     </div>"""
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"📡 InvestAI — {len(buys)} señal(es) BUY detectada(s)"
+    msg["Subject"] = f"📡 InvestAI — {len(buys)} señal(es) BUY (prioridad ≥{ALERT_MIN_PRIORITY})"
     msg["From"] = GMAIL_USER
     msg["To"] = ALERT_RECIPIENT
     msg.attach(MIMEText(html, "html"))
@@ -478,6 +659,97 @@ def send_buy_alert(investments: list[dict], generated_at: str) -> int:
     except Exception as e:
         print(f"Gmail alert failed: {e}")
         return 0
+
+
+def send_scheduled_digest(analysis: dict, articles: list[dict], trigger: str = "scheduled") -> bool:
+    """Full digest email — sent every 3 days or on breaking news trigger."""
+    if not GMAIL_USER or not GMAIL_APP_PASSWORD or not ALERT_RECIPIENT:
+        return False
+
+    investments = analysis.get("investments", [])
+    mood = analysis.get("market_mood", "neutral")
+    mood_icon = "📈" if mood == "bullish" else ("📉" if mood == "bearish" else "↔")
+    mood_color = "#10b981" if mood == "bullish" else ("#ef4444" if mood == "bearish" else "#f59e0b")
+
+    _RISK_COLOR = {"low": "#10b981", "medium": "#f59e0b", "high": "#ef4444"}
+    _TF_LABEL = {"short": "Corto", "medium": "Mediano", "long": "Largo"}
+
+    rows = ""
+    for inv in sorted(investments, key=lambda x: -x.get("priority", 0)):
+        sig = inv.get("signal", "watch").upper()
+        sig_color = "#10b981" if sig == "BUY" else ("#ef4444" if sig == "SELL" else "#f59e0b")
+        risk = inv.get("risk", "medium")
+        rc = _RISK_COLOR.get(risk, "#f59e0b")
+        rows += f"""<tr>
+          <td style="padding:8px 10px;border-bottom:1px solid #1f2d45;color:#e2e8f0;font-weight:600">{inv['asset']}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #1f2d45;color:{sig_color};font-weight:700">{sig}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #1f2d45;color:#22d3ee;font-weight:700">{inv.get('priority',0)}/10</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #1f2d45;color:{rc};font-size:12px">{risk.upper()}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #1f2d45;color:#94a3b8;font-size:12px">{_TF_LABEL.get(inv.get('timeframe','short'),'—')}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #1f2d45;color:#10b981;font-size:12px">{inv.get('target','—')}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #1f2d45;color:#ef4444;font-size:12px">{inv.get('stop_loss','—')}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #1f2d45;color:#94a3b8;font-size:11px">{inv.get('rationale','')[:160]}</td>
+        </tr>"""
+
+    risks_html = "".join(f"<li style='margin-bottom:6px'>{r}</li>" for r in analysis.get("risks", []))
+    themes_html = "".join(f"<span style='background:#1c2536;border:1px solid #1f2d45;padding:3px 10px;border-radius:20px;font-size:12px;margin:3px;display:inline-block'>{t}</span>" for t in analysis.get("key_themes", []))
+    trigger_badge = f"<span style='background:#7c3aed20;border:1px solid #7c3aed;padding:2px 10px;border-radius:4px;font-size:11px;color:#a78bfa'>⚡ BREAKING</span>" if trigger == "breaking" else "<span style='background:#1c2536;border:1px solid #1f2d45;padding:2px 10px;border-radius:4px;font-size:11px;color:#64748b'>🗓 PROGRAMADO</span>"
+
+    html = f"""<div style="font-family:-apple-system,sans-serif;background:#0a0e1a;color:#e2e8f0;padding:32px;max-width:960px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+        <h1 style="color:#3b82f6;margin:0">📡 InvestAI — Informe de Mercado</h1>
+        {trigger_badge}
+      </div>
+      <p style="color:#64748b;margin-bottom:20px">{analysis.get('generated_at','')}</p>
+
+      <div style="background:#111827;border:1px solid;border-radius:12px;padding:20px;margin-bottom:24px;border-color:{mood_color}40">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <span style="font-size:20px">{mood_icon}</span>
+          <span style="color:{mood_color};font-weight:700;text-transform:uppercase">{mood}</span>
+          <span style="color:#64748b;font-size:13px;margin-left:auto">{analysis.get('macro_regime','').upper()}</span>
+        </div>
+        <p style="color:#94a3b8;font-size:14px;line-height:1.6;margin:0">{analysis.get('market_summary','')}</p>
+        <div style="margin-top:12px">{themes_html}</div>
+      </div>
+
+      <h3 style="color:#e2e8f0;margin-bottom:12px">🎯 Oportunidades de Inversión</h3>
+      <table style="width:100%;border-collapse:collapse;background:#111827;border-radius:8px;overflow:hidden;margin-bottom:24px">
+        <thead><tr style="background:#1c2536">
+          <th style="padding:8px 10px;text-align:left;color:#64748b;font-size:11px">ACTIVO</th>
+          <th style="padding:8px 10px;color:#64748b;font-size:11px">SEÑAL</th>
+          <th style="padding:8px 10px;color:#64748b;font-size:11px">PRIOR.</th>
+          <th style="padding:8px 10px;color:#64748b;font-size:11px">RIESGO</th>
+          <th style="padding:8px 10px;color:#64748b;font-size:11px">PLAZO</th>
+          <th style="padding:8px 10px;color:#64748b;font-size:11px">TARGET</th>
+          <th style="padding:8px 10px;color:#64748b;font-size:11px">STOP</th>
+          <th style="padding:8px 10px;text-align:left;color:#64748b;font-size:11px">RAZÓN</th>
+        </tr></thead>
+        <tbody>{rows}</tbody>
+      </table>
+
+      <h3 style="color:#ef4444;margin-bottom:12px">⚠ Riesgos Principales</h3>
+      <ul style="color:#94a3b8;font-size:13px;line-height:1.8;padding-left:20px">{risks_html}</ul>
+
+      <p style="color:#374151;font-size:11px;margin-top:24px;border-top:1px solid #1f2d45;padding-top:12px">
+        {analysis.get('disclaimer','')} Fuentes: {len(analysis.get('sources_used',[]))} | Artículos: {analysis.get('articles_fetched',0)}
+      </p>
+    </div>"""
+
+    subject_tag = "⚡ BREAKING — " if trigger == "breaking" else "📊 Informe 3 días — "
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"📡 InvestAI {subject_tag}{mood.upper()} | {len(investments)} oportunidades"
+    msg["From"] = GMAIL_USER
+    msg["To"] = ALERT_RECIPIENT
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            server.send_message(msg)
+        return True
+    except Exception as e:
+        print(f"Digest email failed: {e}")
+        return False
 
 
 # ─── ANALYSIS ────────────────────────────────────────────────────────────────
@@ -501,13 +773,15 @@ def analyze_with_gpt(articles: list[dict], graph_context: str = "") -> dict:
     titles = "\n".join(f"[{a['source']}] {a['title']}" for a in ranked[30:100])
     articles_text = detail + ("\n\n---\n" + titles if titles else "")
 
+    market = fetch_market_snapshot()
+    market_section = f"\nMERCADO AHORA:{market}\n" if market else ""
     graph_section = f"\nGRAFO:{graph_context}\n" if graph_context else ""
 
     system = "Analista financiero experto. Solo JSON válido. Español."
 
     user = f"""Fecha:{datetime.now().strftime('%Y-%m-%d %H:%M')} Fuentes:{len(set(a['source'] for a in articles))} Artículos:{len(articles)}
-CORROBORACIÓN:{corr_text}
-{graph_section}
+CORROBORACIÓN(entidad:score):{corr_text}
+{market_section}{graph_section}
 NOTICIAS:
 {articles_text[:6000]}
 
@@ -671,6 +945,61 @@ async def status():
         "graph_edges": G.number_of_edges() if G else 0,
         "mode": _state["analysis"].get("mode", "none") if _state["analysis"] else "none",
     }
+
+
+@app.get("/api/scheduled-analysis")
+async def scheduled_analysis():
+    """Vercel cron: full analysis every 3 days + digest email."""
+    articles = await gather_news()
+    if not articles:
+        return JSONResponse({"error": "No articles"}, status_code=503)
+    G = build_entity_graph(articles)
+    _state["graph"] = G
+    try:
+        analysis = analyze_with_gpt(articles, _graph_context_for_gpt(G))
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    analysis["articles_fetched"] = len(articles)
+    analysis["sources_used"] = sorted(set(a["source"] for a in articles))
+    analysis["generated_at"] = datetime.now().isoformat()
+    _state["analysis"] = analysis
+    _state["articles"] = articles
+    _state["fetched_at"] = datetime.now().isoformat()
+    sent_digest = send_scheduled_digest(analysis, articles, trigger="scheduled")
+    sent_alerts = send_buy_alert(analysis.get("investments", []), analysis["generated_at"])
+    return {"scheduled": True, "digest_sent": sent_digest, "buy_alerts": sent_alerts}
+
+
+@app.get("/api/check-trigger")
+async def check_trigger():
+    """Vercel cron every 6h: lightweight Tier-1 check → full analysis on breaking news."""
+    # Fetch only Tier-1 feeds for speed (completes < 10s)
+    headers = {"User-Agent": "Mozilla/5.0"}
+    async with httpx.AsyncClient(headers=headers) as http:
+        tasks = [fetch_feed(n, u, http) for n, u in list(FEEDS_TIER1.items())[:20]]
+        results = await asyncio.gather(*tasks)
+    quick_articles = [art for batch in results for art in batch]
+
+    breaking = detect_breaking_news(quick_articles)
+    if not breaking:
+        return {"triggered": False, "checked": len(quick_articles)}
+
+    # Breaking news detected → full analysis
+    articles = await gather_news()
+    G = build_entity_graph(articles)
+    _state["graph"] = G
+    try:
+        analysis = analyze_with_gpt(articles, _graph_context_for_gpt(G))
+    except Exception as e:
+        return JSONResponse({"error": str(e), "breaking": breaking}, status_code=500)
+    analysis["articles_fetched"] = len(articles)
+    analysis["sources_used"] = sorted(set(a["source"] for a in articles))
+    analysis["generated_at"] = datetime.now().isoformat()
+    _state["analysis"] = analysis
+    _state["articles"] = articles
+    _state["fetched_at"] = datetime.now().isoformat()
+    sent = send_scheduled_digest(analysis, articles, trigger="breaking")
+    return {"triggered": True, "breaking": breaking, "digest_sent": sent}
 
 
 @app.get("/", response_class=HTMLResponse)
