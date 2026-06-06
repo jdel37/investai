@@ -483,79 +483,42 @@ def send_buy_alert(investments: list[dict], generated_at: str) -> int:
 # ─── ANALYSIS ────────────────────────────────────────────────────────────────
 def analyze_with_gpt(articles: list[dict], graph_context: str = "") -> dict:
     corroboration = build_corroboration_map(articles)
-    corr_text = ", ".join(
-        f'"{e}" ({n} fuentes)' for e, n in corroboration.items()
+    corr_text = ", ".join(f'"{e}"({n})' for e, n in corroboration.items())
+
+    # Rank articles by corroboration signal — high-overlap articles first
+    corr_keys = set(corroboration.keys())
+    def _score(a):
+        t = (a["title"] + " " + a.get("summary", "")).lower()
+        return sum(1 for e in corr_keys if e.lower() in t)
+
+    ranked = sorted([a for a in articles if a["title"]], key=_score, reverse=True)
+
+    # Top 30: title + summary. Next 70: title only. Total ≈1200 tokens vs 3500
+    detail = "\n\n".join(
+        f"[{a['source']}] {a['title']}\n{a['summary'][:150]}"
+        for a in ranked[:30]
     )
+    titles = "\n".join(f"[{a['source']}] {a['title']}" for a in ranked[30:100])
+    articles_text = detail + ("\n\n---\n" + titles if titles else "")
 
-    articles_text = "\n\n".join(
-        f"[{a['source']}] {a['title']}\n{a['summary']}"
-        for a in articles[:350]
-        if a["title"]
-    )
+    graph_section = f"\nGRAFO:{graph_context}\n" if graph_context else ""
 
-    graph_section = f"\n\nCONTEXTO DEL GRAFO DE ENTIDADES:\n{graph_context}\n" if graph_context else ""
+    system = "Analista financiero experto. Solo JSON válido. Español."
 
-    system = (
-        "Eres el mejor analista financiero del mundo: combinas macroeconomía, "
-        "geopolítica, análisis técnico y fundamentales. Hablas español. "
-        "Generas solo JSON válido, sin texto adicional."
-    )
-
-    user = f"""Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-
-TÉRMINOS MÁS CORROBORADOS POR MÚLTIPLES FUENTES INDEPENDIENTES:
-{corr_text}
+    user = f"""Fecha:{datetime.now().strftime('%Y-%m-%d %H:%M')} Fuentes:{len(set(a['source'] for a in articles))} Artículos:{len(articles)}
+CORROBORACIÓN:{corr_text}
 {graph_section}
-NOTICIAS ({len(articles)} artículos de {len(set(a['source'] for a in articles))} fuentes):
-{articles_text[:14000]}
+NOTICIAS:
+{articles_text[:6000]}
 
-INSTRUCCIONES:
-1. Identifica primero qué historias aparecen en MÚLTIPLES fuentes independientes (alta corroboración = más confianza).
-2. Descarta o penaliza noticias de fuente única que contradigan el consenso.
-3. Si tienes contexto del grafo de entidades, úsalo para identificar qué personajes políticos, científicos y empresas están en el centro de la narrativa y cómo se relacionan.
-4. Genera un análisis de inversiones profundo, específico y accionable.
-
-Responde ÚNICAMENTE con este JSON (sin markdown, sin ```):
-{{
-  "macro_regime": "risk-on|risk-off|stagflation|reflation|deflation|recovery|uncertainty",
-  "macro_regime_description": "2 oraciones explicando el régimen macro actual",
-  "market_mood": "bullish|bearish|neutral",
-  "market_summary": "3-4 oraciones: qué está pasando, por qué, qué implica para inversores",
-  "key_themes": ["tema1","tema2","tema3","tema4","tema5"],
-  "sector_rotation": {{
-    "overweight": ["sector con viento a favor 1","sector 2"],
-    "underweight": ["sector bajo presión 1","sector 2"]
-  }},
-  "investments": [
-    {{
-      "asset": "nombre del activo o sector",
-      "type": "stock|etf|crypto|commodity|bond|real_estate|currency|index",
-      "priority": 8,
-      "signal": "buy|hold|sell|watch",
-      "rationale": "razón específica basada en noticias concretas (3-4 oraciones)",
-      "timeframe": "short|medium|long",
-      "risk": "low|medium|high",
-      "catalysts": ["catalizador específico 1","catalizador 2","catalizador 3"],
-      "examples": ["TICKER1","TICKER2","TICKER3"],
-      "portfolio_weight": "X% del portafolio",
-      "entry_strategy": "estrategia concreta de entrada: zonas, condiciones, triggers",
-      "stop_loss": "nivel o % de stop loss sugerido y justificación",
-      "target": "objetivo de precio o % de ganancia esperado",
-      "corroboration_score": 8,
-      "sources_confirming": ["fuente que confirma 1","fuente 2","fuente 3"]
-    }}
-  ],
-  "macro_hedges": ["cobertura recomendada 1","cobertura 2"],
-  "risks": ["riesgo concreto 1 con fuente","riesgo 2","riesgo 3","riesgo 4"],
-  "watchlist": ["activo a vigilar 1 con razón breve","activo 2"],
-  "disclaimer": "Este análisis es solo informativo y no constituye asesoramiento financiero profesional. Invierte con responsabilidad."
-}}
-
-Genera entre 7 y 10 inversiones. Prioridad 10 = máxima urgencia. Sé extremadamente específico y accionable."""
+Prioriza historias en múltiples fuentes. Usa el grafo para identificar políticos/científicos/empresas clave.
+JSON (sin markdown):
+{{"macro_regime":"risk-on|risk-off|stagflation|reflation|deflation|recovery|uncertainty","macro_regime_description":"str","market_mood":"bullish|bearish|neutral","market_summary":"str","key_themes":["t1","t2","t3","t4","t5"],"sector_rotation":{{"overweight":["s1","s2"],"underweight":["s1","s2"]}},"investments":[{{"asset":"str","type":"stock|etf|crypto|commodity|bond|real_estate|currency|index","priority":8,"signal":"buy|hold|sell|watch","rationale":"str","timeframe":"short|medium|long","risk":"low|medium|high","catalysts":["c1","c2"],"examples":["T1","T2"],"portfolio_weight":"X%","entry_strategy":"str","stop_loss":"str","target":"str","corroboration_score":8,"sources_confirming":["f1","f2"]}}],"macro_hedges":["h1","h2"],"risks":["r1","r2","r3"],"watchlist":["w1","w2"],"disclaimer":"str"}}
+5-7 inversiones. Prioridad 10=máxima urgencia."""
 
     resp = get_openai_client().chat.completions.create(
         model="gpt-4.1-mini",
-        max_tokens=5000,
+        max_tokens=2500,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system},
@@ -579,27 +542,15 @@ class ChatReq(BaseModel):
 
 @app.post("/api/chat")
 async def chat(req: ChatReq):
-    analysis_ctx = json.dumps(_state["analysis"], ensure_ascii=False)[:8000]
+    analysis_ctx = json.dumps(_state["analysis"], ensure_ascii=False)[:4000]
     article_titles = "\n".join(
-        f"- [{a['source']}] {a['title']}"
-        for a in _state["articles"][:120]
+        f"[{a['source']}] {a['title']}"
+        for a in _state["articles"][:60]
     )
 
-    system_msg = f"""Eres un asesor financiero senior de primer nivel. Tienes acceso al análisis de mercado más reciente generado hace instantes.
-
-ANÁLISIS ACTUAL DEL MERCADO:
-{analysis_ctx}
-
-MUESTRA DE ARTÍCULOS ANALIZADOS ({len(_state['articles'])} artículos totales):
-{article_titles}
-
-INSTRUCCIONES:
-- Responde en español, de forma directa y accionable
-- Para preguntas sobre activos específicos: da entrada, stop loss, sizing, catalizadores
-- Cita fuentes específicas de las noticias cuando sea relevante
-- Si preguntan por algo no cubierto en el análisis, dilo y da tu mejor criterio
-- Sé conciso pero completo. Usa formato markdown (negritas, listas) para claridad
-- Nunca des excusas ni descargos innecesarios — el usuario quiere información útil"""
+    system_msg = f"""Asesor financiero senior. Español. Directo y accionable. Markdown.
+ANÁLISIS:{analysis_ctx}
+NOTICIAS:{article_titles}"""
 
     messages = [{"role": "system", "content": system_msg}]
     for h in req.history[-12:]:
@@ -612,7 +563,7 @@ INSTRUCCIONES:
                 model="gpt-4.1-mini",
                 messages=messages,
                 stream=True,
-                max_tokens=1200,
+                max_tokens=800,
             )
             for chunk in stream:
                 delta = chunk.choices[0].delta
