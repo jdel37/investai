@@ -1,6 +1,8 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/main.py" }],
-  "functions": {
-    "main.py": { "maxDuration": 60 }
-  }
+  "builds": [
+    { "src": "main.py", "use": "@vercel/python", "config": { "maxDuration": 60 } }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "main.py" }
+  ]
 }
