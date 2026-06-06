@@ -476,6 +476,35 @@
 
   </div>
 
+  <!-- Budget Planner -->
+  <div id="budgetSection" style="display:none; max-width:1400px; margin:0 auto; padding:0 32px 48px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--card-radius);padding:28px">
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:20px;color:var(--text)">💰 Planificador de Presupuesto</h2>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:24px">
+        <div>
+          <label style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;display:block;margin-bottom:6px">Presupuesto</label>
+          <input type="number" id="budgetInput" value="1000" min="1" step="100"
+            style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:8px;font-size:16px;font-weight:600;width:180px;outline:none">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;display:block;margin-bottom:6px">Moneda</label>
+          <select id="currencyInput"
+            style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:8px;font-size:14px;outline:none">
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="COP">COP</option>
+            <option value="MXN">MXN</option>
+            <option value="ARS">ARS</option>
+          </select>
+        </div>
+        <button class="btn" onclick="calcBudget()" style="height:42px">
+          <span>📊</span><span>Calcular Asignación</span>
+        </button>
+      </div>
+      <div id="budgetResult"></div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -682,7 +711,84 @@ function renderResults(data) {
   document.getElementById('metaFooter').textContent = data.disclaimer || '';
 
   document.getElementById('results').style.display = 'block';
+  document.getElementById('budgetSection').style.display = 'block';
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function calcBudget() {
+  const budget = parseFloat(document.getElementById('budgetInput').value) || 1000;
+  const currency = document.getElementById('currencyInput').value;
+  const container = document.getElementById('budgetResult');
+  container.innerHTML = '<div style="color:var(--muted);padding:12px">Calculando...</div>';
+
+  try {
+    const res = await fetch(`/api/portfolio?budget=${budget}&currency=${currency}`);
+    const data = await res.json();
+    if (data.error) { container.innerHTML = `<p style="color:var(--red)">${data.error}</p>`; return; }
+    renderBudget(data, container);
+  } catch(e) {
+    container.innerHTML = `<p style="color:var(--red)">Error: ${e.message}</p>`;
+  }
+}
+
+function renderBudget(data, container) {
+  const _rc = {low:'#10b981',medium:'#f59e0b',high:'#ef4444'};
+  const _tf = {short:'⚡ Corto',medium:'📅 Mediano',long:'🌳 Largo'};
+  const _sig = {buy:'▲ BUY',sell:'▼ SELL',hold:'◆ HOLD',watch:'◉ WATCH'};
+  const _sigc = {buy:'#10b981',sell:'#ef4444',hold:'#f59e0b',watch:'#a5b4fc'};
+  const fmt = (n) => new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
+
+  const rows = data.allocations.map(a => {
+    const bar = `<div style="height:4px;background:${_rc[a.risk]||'#64748b'};border-radius:2px;width:${Math.min(100,a.pct*2)}%;margin-top:4px"></div>`;
+    return `<tr>
+      <td style="padding:12px 14px;border-bottom:1px solid var(--border)">
+        <div style="font-weight:700;color:var(--text)">${a.asset}</div>
+        <div style="font-size:11px;color:#93c5fd">${(a.examples||[]).slice(0,3).join(' · ')}</div>
+      </td>
+      <td style="padding:12px 14px;border-bottom:1px solid var(--border);color:${_sigc[a.signal]||'#64748b'};font-weight:700">${_sig[a.signal]||a.signal}</td>
+      <td style="padding:12px 14px;border-bottom:1px solid var(--border)">
+        <div style="font-size:22px;font-weight:800;color:var(--accent)">${fmt(a.amount)}</div>
+        <div style="font-size:12px;color:var(--muted)">${a.currency} · ${a.pct}%</div>${bar}
+      </td>
+      <td style="padding:12px 14px;border-bottom:1px solid var(--border);color:${_rc[a.risk]||'#64748b'};font-size:12px;font-weight:600;text-transform:uppercase">${a.risk}</td>
+      <td style="padding:12px 14px;border-bottom:1px solid var(--border);color:var(--muted);font-size:12px">${_tf[a.timeframe]||'—'}</td>
+      <td style="padding:12px 14px;border-bottom:1px solid var(--border);color:#10b981;font-size:12px">${a.target||'—'}</td>
+      <td style="padding:12px 14px;border-bottom:1px solid var(--border);color:#ef4444;font-size:12px">${a.stop_loss||'—'}</td>
+      <td style="padding:12px 14px;border-bottom:1px solid var(--border);color:#94a3b8;font-size:12px;max-width:240px">${(a.rationale||'').slice(0,160)}</td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 20px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px">Presupuesto Total</div>
+        <div style="font-size:26px;font-weight:800;color:var(--accent)">${fmt(data.budget)} ${data.currency}</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 20px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px">Asignado</div>
+        <div style="font-size:26px;font-weight:800;color:#10b981">${fmt(data.total_allocated)} ${data.currency}</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 20px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px">Posiciones</div>
+        <div style="font-size:26px;font-weight:800;color:var(--text)">${data.allocations.length}</div>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;background:var(--surface);border-radius:8px;overflow:hidden">
+        <thead><tr style="background:var(--surface2)">
+          <th style="padding:10px 14px;text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase">ACTIVO</th>
+          <th style="padding:10px 14px;text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase">SEÑAL</th>
+          <th style="padding:10px 14px;text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase">ASIGNACIÓN</th>
+          <th style="padding:10px 14px;text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase">RIESGO</th>
+          <th style="padding:10px 14px;text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase">PLAZO</th>
+          <th style="padding:10px 14px;text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase">TARGET</th>
+          <th style="padding:10px 14px;text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase">STOP</th>
+          <th style="padding:10px 14px;text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase">RAZÓN</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:16px">${data.disclaimer||''}</p>`;
 }
 </script>
 </body>

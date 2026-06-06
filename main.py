@@ -947,6 +947,73 @@ async def status():
     }
 
 
+@app.get("/api/portfolio")
+async def portfolio(budget: float = 1000.0, currency: str = "USD"):
+    """Given a budget, return personalized allocation based on current analysis."""
+    analysis = _state.get("analysis")
+    if not analysis or not analysis.get("investments"):
+        return JSONResponse(
+            {"error": "Sin análisis. Ejecuta 'Analizar' primero."},
+            status_code=400
+        )
+
+    investments = analysis["investments"]
+    # Use AI-assigned portfolio_weight if available, else distribute by priority
+    weights = []
+    for inv in investments:
+        pw = inv.get("portfolio_weight", "")
+        try:
+            w = float(re.sub(r"[^0-9.]", "", str(pw)))
+        except Exception:
+            w = 0.0
+        weights.append(w)
+
+    total_w = sum(weights)
+    if total_w <= 0:
+        # Fallback: distribute by priority score
+        priorities = [inv.get("priority", 5) for inv in investments]
+        total_p = sum(priorities)
+        weights = [p / total_p * 100 for p in priorities]
+        total_w = 100.0
+
+    allocations = []
+    for inv, w in zip(investments, weights):
+        pct = round(w / total_w * 100, 1)
+        amount = round(budget * pct / 100, 2)
+        if amount <= 0:
+            continue
+        allocations.append({
+            "asset": inv["asset"],
+            "type": inv["type"],
+            "signal": inv["signal"],
+            "priority": inv["priority"],
+            "risk": inv["risk"],
+            "timeframe": inv["timeframe"],
+            "pct": pct,
+            "amount": amount,
+            "currency": currency,
+            "examples": inv.get("examples", []),
+            "rationale": inv.get("rationale", ""),
+            "entry_strategy": inv.get("entry_strategy", ""),
+            "stop_loss": inv.get("stop_loss", ""),
+            "target": inv.get("target", ""),
+        })
+
+    # Sort by amount desc
+    allocations.sort(key=lambda x: -x["amount"])
+
+    return {
+        "budget": budget,
+        "currency": currency,
+        "total_allocated": round(sum(a["amount"] for a in allocations), 2),
+        "allocations": allocations,
+        "macro_regime": analysis.get("macro_regime", ""),
+        "market_mood": analysis.get("market_mood", ""),
+        "generated_at": analysis.get("generated_at", ""),
+        "disclaimer": analysis.get("disclaimer", ""),
+    }
+
+
 @app.get("/api/scheduled-analysis")
 async def scheduled_analysis():
     """Vercel cron: full analysis every 3 days + digest email."""
