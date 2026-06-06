@@ -30,7 +30,16 @@ ALERT_RECIPIENT = os.getenv("ALERT_RECIPIENT", GMAIL_USER)
 ALERT_MIN_PRIORITY = int(os.getenv("ALERT_MIN_PRIORITY", "8"))
 
 app = FastAPI(title="InvestAI")
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_openai_client = None
+
+def get_openai_client() -> OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        key = os.getenv("OPENAI_API_KEY")
+        if not key:
+            raise ValueError("OPENAI_API_KEY no configurado")
+        _openai_client = OpenAI(api_key=key)
+    return _openai_client
 
 # Server state — single user app
 _state: dict = {"analysis": {}, "articles": [], "fetched_at": None, "graph": None}
@@ -544,7 +553,7 @@ Responde ÚNICAMENTE con este JSON (sin markdown, sin ```):
 
 Genera entre 7 y 10 inversiones. Prioridad 10 = máxima urgencia. Sé extremadamente específico y accionable."""
 
-    resp = client.chat.completions.create(
+    resp = get_openai_client().chat.completions.create(
         model="gpt-4.1-mini",
         max_tokens=5000,
         response_format={"type": "json_object"},
@@ -599,7 +608,7 @@ INSTRUCCIONES:
 
     def stream_response():
         try:
-            stream = client.chat.completions.create(
+            stream = get_openai_client().chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=messages,
                 stream=True,
