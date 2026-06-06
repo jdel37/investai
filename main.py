@@ -637,7 +637,11 @@ async def analyze():
     G = build_entity_graph(articles)
     _state["graph"] = G
 
-    analysis = analyze_with_gpt(articles, _graph_context_for_gpt(G))
+    try:
+        analysis = analyze_with_gpt(articles, _graph_context_for_gpt(G))
+    except Exception as e:
+        return JSONResponse({"error": str(e), "type": type(e).__name__}, status_code=500)
+
     analysis["articles_fetched"] = len(articles)
     analysis["sources_used"] = sorted(set(a["source"] for a in articles))
     analysis["generated_at"] = datetime.now().isoformat()
