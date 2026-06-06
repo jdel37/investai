@@ -788,7 +788,8 @@ NOTICIAS:
 Prioriza historias en múltiples fuentes. Usa el grafo para identificar políticos/científicos/empresas clave.
 JSON (sin markdown):
 {{"macro_regime":"risk-on|risk-off|stagflation|reflation|deflation|recovery|uncertainty","macro_regime_description":"str","market_mood":"bullish|bearish|neutral","market_summary":"str","key_themes":["t1","t2","t3","t4","t5"],"sector_rotation":{{"overweight":["s1","s2"],"underweight":["s1","s2"]}},"investments":[{{"asset":"str","type":"stock|etf|crypto|commodity|bond|real_estate|currency|index","priority":8,"signal":"buy|hold|sell|watch","rationale":"str","timeframe":"short|medium|long","risk":"low|medium|high","catalysts":["c1","c2"],"examples":["T1","T2"],"portfolio_weight":"X%","entry_strategy":"str","stop_loss":"str","target":"str","corroboration_score":8,"sources_confirming":["f1","f2"]}}],"macro_hedges":["h1","h2"],"risks":["r1","r2","r3"],"watchlist":["w1","w2"],"disclaimer":"str"}}
-5-7 inversiones. Prioridad 10=máxima urgencia."""
+5-7 inversiones. Prioridad 10=máxima urgencia.
+CRÍTICO: en "asset" pon el nombre ESPECÍFICO del activo (ej: "NVIDIA", "Bitcoin", "Apple", "Tesla", "Gold Futures") — NUNCA sectores genéricos ("Tecnología", "Energía", "Mercados emergentes"). En "examples" pon tickers reales (ej: ["NVDA","AMD","TSMC"] o ["BTC","ETH"])."""
 
     resp = get_openai_client().chat.completions.create(
         model="gpt-4.1-mini",
