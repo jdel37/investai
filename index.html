@@ -477,7 +477,7 @@
   </div>
 
   <!-- Budget Planner -->
-  <div id="budgetSection" style="display:none; max-width:1400px; margin:0 auto; padding:0 32px 48px">
+  <div id="budgetSection" style="max-width:1400px; margin:0 auto; padding:0 32px 48px">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--card-radius);padding:28px">
       <h2 style="font-size:18px;font-weight:700;margin-bottom:20px;color:var(--text)">💰 Planificador de Presupuesto</h2>
       <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:24px">
@@ -711,7 +711,6 @@ function renderResults(data) {
   document.getElementById('metaFooter').textContent = data.disclaimer || '';
 
   document.getElementById('results').style.display = 'block';
-  document.getElementById('budgetSection').style.display = 'block';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
