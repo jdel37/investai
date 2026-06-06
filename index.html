@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InvestAI — Radar de Inversiones</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1c2536;
+    --border: #1f2d45;
+    --accent: #3b82f6;
+    --accent2: #6366f1;
+    --green: #10b981;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --card-radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  .header {
+    background: linear-gradient(135deg, var(--surface) 0%, #0f172a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 24px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: blur(12px);
+  }
+
+  .btn-group { display: flex; gap: 10px; align-items: center; }
+
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+  .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .mode-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-left: 10px;
+  }
+  .mode-badge.ai    { background: rgba(99,102,241,0.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); }
+  .mode-badge.graph { background: rgba(16,185,129,0.12); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+  }
+
+  .logo h1 {
+    font-size: 22px;
+    font-weight: 700;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .logo p {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .btn {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: white;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 32px; }
+
+  /* Loading */
+  .loading {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px;
+    gap: 20px;
+  }
+
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading p { color: var(--muted); font-size: 15px; }
+  .loading .steps { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .loading .step { font-size: 13px; color: var(--muted); opacity: 0.6; transition: opacity 0.4s; }
+  .loading .step.active { color: var(--accent); opacity: 1; }
+
+  /* Market mood banner */
+  .mood-banner {
+    display: none;
+    border-radius: var(--card-radius);
+    padding: 20px 24px;
+    margin-bottom: 28px;
+    border: 1px solid;
+  }
+
+  .mood-banner.bullish { background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.3); }
+  .mood-banner.bearish { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.3); }
+  .mood-banner.neutral { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.3); }
+
+  .mood-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .mood-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .bullish .mood-badge { background: rgba(16,185,129,0.2); color: var(--green); }
+  .bearish .mood-badge { background: rgba(239,68,68,0.2); color: var(--red); }
+  .neutral .mood-badge { background: rgba(245,158,11,0.2); color: var(--yellow); }
+
+  .mood-summary { font-size: 14px; color: var(--text); line-height: 1.6; }
+
+  .themes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .theme-tag {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* Stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    padding: 16px 20px;
+  }
+
+  .stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+  .stat-card .value { font-size: 24px; font-weight: 700; color: var(--text); }
+  .stat-card .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* Investments grid */
+  .section-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: var(--text);
+  }
+
+  .investments-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 20px;
+    margin-bottom: 32px;
+  }
+
+  .investment-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    padding: 20px;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .investment-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(59,130,246,0.1);
+  }
+
+  .priority-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 3px;
+    border-radius: 12px 12px 0 0;
+    transition: width 0.8s ease;
+  }
+
+  .card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
+
+  .asset-info { flex: 1; }
+  .asset-name { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .asset-type {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: var(--surface2);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  .priority-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    min-width: 54px;
+  }
+
+  .priority-badge .num {
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .priority-badge .lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; margin-top: 2px; }
+
+  .signal-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+
+  .signal-badge {
+    padding: 4px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .signal-badge.buy { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+  .signal-badge.sell { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .signal-badge.hold { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
+  .signal-badge.watch { background: rgba(99,102,241,0.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); }
+
+  .meta-pill {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+
+  .rationale {
+    font-size: 13px;
+    color: #94a3b8;
+    line-height: 1.6;
+    margin-bottom: 14px;
+  }
+
+  .catalysts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .catalyst {
+    font-size: 11px;
+    padding: 3px 10px;
+    background: rgba(59,130,246,0.08);
+    border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 4px;
+    color: #93c5fd;
+  }
+
+  .examples { display: flex; flex-wrap: wrap; gap: 6px; }
+  .example {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  /* Risk meter */
+  .risk-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .risk-label { font-size: 11px; color: var(--muted); }
+  .risk-dots { display: flex; gap: 3px; }
+  .risk-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+  .risk-dot.active.low { background: var(--green); }
+  .risk-dot.active.medium { background: var(--yellow); }
+  .risk-dot.active.high { background: var(--red); }
+
+  /* Risks section */
+  .risks-section {
+    background: var(--surface);
+    border: 1px solid rgba(239,68,68,0.2);
+    border-radius: var(--card-radius);
+    padding: 20px 24px;
+    margin-bottom: 28px;
+  }
+
+  .risks-section h3 { font-size: 15px; font-weight: 700; color: var(--red); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .risk-list { display: flex; flex-direction: column; gap: 8px; }
+  .risk-item { display: flex; gap: 10px; font-size: 13px; color: #94a3b8; }
+  .risk-item::before { content: "⚠"; font-size: 12px; opacity: 0.7; flex-shrink: 0; margin-top: 1px; }
+
+  /* Meta */
+  .meta-footer {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    margin-top: 16px;
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 80px;
+    color: var(--muted);
+  }
+
+  .empty-state .icon { font-size: 64px; margin-bottom: 20px; opacity: 0.4; }
+  .empty-state h2 { font-size: 20px; margin-bottom: 10px; }
+  .empty-state p { font-size: 14px; opacity: 0.7; }
+
+  /* Priority color scale */
+  .p-10, .p-9 { color: var(--green); }
+  .p-8, .p-7 { color: #22d3ee; }
+  .p-6, .p-5 { color: var(--yellow); }
+  .p-4, .p-3 { color: #f97316; }
+  .p-2, .p-1 { color: var(--red); }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .container { padding: 16px; }
+    .header { padding: 16px; }
+    .investments-grid { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon">📡</div>
+    <div>
+      <h1>InvestAI</h1>
+      <p>Radar de Inversiones · Powered by Claude</p>
+    </div>
+  </div>
+  <div class="btn-group">
+    <button class="btn-secondary" id="noAiBtn" onclick="runAnalysis('no-ai')">
+      <span id="noAiBtnIcon">🔗</span>
+      <span id="noAiBtnText">Sin IA (Grafo)</span>
+    </button>
+    <button class="btn" id="analyzeBtn" onclick="runAnalysis('ai')">
+      <span id="btnIcon">⚡</span>
+      <span id="btnText">Analizar con IA</span>
+    </button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Empty state -->
+  <div class="empty-state" id="emptyState">
+    <div class="icon">🔭</div>
+    <h2>Radar de Inversiones con IA</h2>
+    <p>Analiza noticias geopolíticas, tech y financieras en tiempo real.<br>Haz clic en <strong>Analizar Ahora</strong> para obtener recomendaciones personalizadas.</p>
+    <br>
+    <p style="font-size:12px; opacity:0.4;">Fuentes: Reuters · BBC · CNBC · FT · Foreign Policy · The Verge · CoinDesk · y más</p>
+  </div>
+
+  <!-- Loading -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p>Procesando señales del mercado...</p>
+    <div class="steps">
+      <div class="step active" id="s1">📡 Obteniendo noticias de 15+ fuentes globales...</div>
+      <div class="step" id="s2">🧠 Analizando con inteligencia artificial...</div>
+      <div class="step" id="s3">📊 Generando recomendaciones de inversión...</div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results" style="display:none">
+
+    <!-- Mood banner -->
+    <div class="mood-banner" id="moodBanner">
+      <div class="mood-header">
+        <span>🌐 Sentimiento de Mercado</span>
+        <span class="mood-badge" id="moodBadge"></span>
+        <span class="mode-badge" id="modeBadge"></span>
+        <span id="generatedAt" style="font-size:12px; color:var(--muted); margin-left:auto"></span>
+      </div>
+      <div class="mood-summary" id="moodSummary"></div>
+      <div class="themes" id="themes"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row" id="statsRow"></div>
+
+    <!-- Investments -->
+    <div class="section-title">🎯 Oportunidades de Inversión</div>
+    <div class="investments-grid" id="investmentsGrid"></div>
+
+    <!-- Risks -->
+    <div class="risks-section" id="risksSection">
+      <h3>⚠ Riesgos Principales</h3>
+      <div class="risk-list" id="risksList"></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="meta-footer" id="metaFooter"></div>
+
+  </div>
+
+</div>
+
+<script>
+const priorityColors = [
+  '#ef4444','#f97316','#f97316','#f59e0b','#f59e0b',
+  '#22d3ee','#22d3ee','#10b981','#10b981','#10b981'
+];
+
+function getPriorityColor(p) {
+  return priorityColors[p - 1] || '#64748b';
+}
+
+function getRiskDots(risk) {
+  const levels = { low: 1, medium: 2, high: 3 };
+  const count = levels[risk] || 2;
+  return [1,2,3].map(i =>
+    `<div class="risk-dot ${i <= count ? `active ${risk}` : ''}"></div>`
+  ).join('');
+}
+
+function formatDate(iso) {
+  return new Date(iso).toLocaleString('es-ES', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+async function runAnalysis(mode = 'ai') {
+  const isAI = mode === 'ai';
+  const btn = document.getElementById(isAI ? 'analyzeBtn' : 'noAiBtn');
+  const otherBtn = document.getElementById(isAI ? 'noAiBtn' : 'analyzeBtn');
+
+  btn.disabled = true;
+  otherBtn.disabled = true;
+
+  if (isAI) {
+    document.getElementById('btnIcon').textContent = '⏳';
+    document.getElementById('btnText').textContent = 'Analizando...';
+  } else {
+    document.getElementById('noAiBtnIcon').textContent = '⏳';
+    document.getElementById('noAiBtnText').textContent = 'Procesando...';
+  }
+
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('results').style.display = 'none';
+
+  const loading = document.getElementById('loading');
+  loading.style.display = 'flex';
+
+  const steps = ['s1','s2','s3'];
+  const delays = isAI ? [0, 4000, 9000] : [0, 2000, 3500];
+  steps.forEach((id, i) => {
+    setTimeout(() => {
+      steps.forEach(s => document.getElementById(s).classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }, delays[i]);
+  });
+
+  const endpoint = isAI ? '/api/analyze' : '/api/analyze-no-ai';
+
+  try {
+    const res = await fetch(endpoint);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderResults(data);
+  } catch (e) {
+    const hint = isAI ? 'Verifica que OPENAI_API_KEY esté configurado.' : 'Error al obtener noticias.';
+    alert(`Error al analizar: ${e.message}\n\n${hint}`);
+    document.getElementById('emptyState').style.display = 'block';
+  } finally {
+    loading.style.display = 'none';
+    btn.disabled = false;
+    otherBtn.disabled = false;
+    document.getElementById('btnIcon').textContent = '🔄';
+    document.getElementById('btnText').textContent = 'Analizar con IA';
+    document.getElementById('noAiBtnIcon').textContent = '🔗';
+    document.getElementById('noAiBtnText').textContent = 'Sin IA (Grafo)';
+  }
+}
+
+function renderResults(data) {
+  // Mood banner
+  const moodEl = document.getElementById('moodBanner');
+  moodEl.className = `mood-banner ${data.market_mood}`;
+  moodEl.style.display = 'block';
+  document.getElementById('moodBadge').textContent =
+    data.market_mood === 'bullish' ? '📈 Alcista' :
+    data.market_mood === 'bearish' ? '📉 Bajista' : '↔ Neutral';
+
+  const modeBadge = document.getElementById('modeBadge');
+  if (data.mode === 'graph-only') {
+    modeBadge.textContent = '🔗 Grafo';
+    modeBadge.className = 'mode-badge graph';
+  } else {
+    modeBadge.textContent = '🤖 IA';
+    modeBadge.className = 'mode-badge ai';
+  }
+
+  document.getElementById('moodSummary').textContent = data.market_summary || '';
+  document.getElementById('generatedAt').textContent = '🕐 ' + formatDate(data.generated_at);
+
+  const themes = document.getElementById('themes');
+  themes.innerHTML = (data.key_themes || []).map(t =>
+    `<span class="theme-tag">${t}</span>`
+  ).join('');
+
+  // Stats
+  const investments = data.investments || [];
+  const buys = investments.filter(i => i.signal === 'buy').length;
+  const avgPri = investments.length
+    ? (investments.reduce((s, i) => s + (i.priority || 0), 0) / investments.length).toFixed(1)
+    : 0;
+
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat-card">
+      <div class="label">Oportunidades</div>
+      <div class="value">${investments.length}</div>
+      <div class="sub">detectadas hoy</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Señales BUY</div>
+      <div class="value" style="color:var(--green)">${buys}</div>
+      <div class="sub">activas</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Prioridad Promedio</div>
+      <div class="value">${avgPri}<span style="font-size:14px;color:var(--muted)">/10</span></div>
+      <div class="sub">del portafolio</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Fuentes Analizadas</div>
+      <div class="value">${data.sources_used ? data.sources_used.length : 0}</div>
+      <div class="sub">${data.articles_fetched || 0} artículos</div>
+    </div>
+  `;
+
+  // Sort by priority desc
+  const sorted = [...investments].sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+  const grid = document.getElementById('investmentsGrid');
+  grid.innerHTML = sorted.map(inv => {
+    const color = getPriorityColor(inv.priority);
+    const pct = (inv.priority / 10) * 100;
+
+    const catalysts = (inv.catalysts || []).map(c =>
+      `<span class="catalyst">${c}</span>`
+    ).join('');
+
+    const examples = (inv.examples || []).map(e =>
+      `<span class="example">${e}</span>`
+    ).join('');
+
+    const typeLabels = {
+      stock: '📈 Acciones', etf: '🗂 ETF', crypto: '₿ Cripto',
+      commodity: '🏅 Commodity', bond: '📄 Bonos',
+      real_estate: '🏠 Inmuebles', currency: '💱 Divisa'
+    };
+
+    return `
+    <div class="investment-card">
+      <div class="priority-bar" style="background:${color}; width:${pct}%"></div>
+
+      <div class="card-header">
+        <div class="asset-info">
+          <div class="asset-name">${inv.asset}</div>
+          <div class="asset-type">${typeLabels[inv.type] || inv.type}</div>
+        </div>
+        <div class="priority-badge" style="border-color:${color}40">
+          <div class="num p-${inv.priority}" style="color:${color}">${inv.priority}</div>
+          <div class="lbl">prioridad</div>
+        </div>
+      </div>
+
+      <div class="signal-row">
+        <span class="signal-badge ${inv.signal}">${
+          inv.signal === 'buy' ? '▲ COMPRAR' :
+          inv.signal === 'sell' ? '▼ VENDER' :
+          inv.signal === 'hold' ? '◆ MANTENER' : '◉ VIGILAR'
+        }</span>
+        <span class="meta-pill">${
+          inv.timeframe === 'short' ? '⚡ Corto plazo' :
+          inv.timeframe === 'medium' ? '📅 Mediano plazo' : '🌳 Largo plazo'
+        }</span>
+        <div class="risk-row" style="margin-left:auto">
+          <span class="risk-label">Riesgo</span>
+          <div class="risk-dots">${getRiskDots(inv.risk)}</div>
+        </div>
+      </div>
+
+      <div class="rationale">${inv.rationale}</div>
+
+      ${catalysts ? `<div class="catalysts">${catalysts}</div>` : ''}
+      ${examples ? `<div class="examples">${examples}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // Risks
+  const risksList = document.getElementById('risksList');
+  risksList.innerHTML = (data.risks || []).map(r =>
+    `<div class="risk-item">${r}</div>`
+  ).join('');
+
+  // Footer
+  document.getElementById('metaFooter').textContent = data.disclaimer || '';
+
+  document.getElementById('results').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
