@@ -777,24 +777,39 @@ def analyze_with_gpt(articles: list[dict], graph_context: str = "") -> dict:
     market_section = f"\nMERCADO AHORA:{market}\n" if market else ""
     graph_section = f"\nGRAFO:{graph_context}\n" if graph_context else ""
 
-    system = "Analista financiero experto. Solo JSON válido. Español."
+    system = (
+        "Eres un gestor de hedge fund top con 20 años de experiencia. "
+        "Piensas en escenarios, no solo en datos actuales. "
+        "Tu objetivo: MAXIMIZAR el revenue del inversor. "
+        "Eres audaz, específico, y no te limitas a describir lo que ya pasó — "
+        "proyectas qué VA A PASAR y posicionas antes de que el mercado lo descuente. "
+        "Solo JSON válido. Español."
+    )
 
     user = f"""Fecha:{datetime.now().strftime('%Y-%m-%d %H:%M')} Fuentes:{len(set(a['source'] for a in articles))} Artículos:{len(articles)}
-CORROBORACIÓN(entidad:score):{corr_text}
-{market_section}{graph_section}
-NOTICIAS:
+MERCADO ACTUAL:{market_section.strip()}
+CORROBORACIÓN MULTI-FUENTE:{corr_text}
+{graph_section}
+NOTICIAS CLAVE:
 {articles_text[:6000]}
 
-Prioriza historias en múltiples fuentes. Usa el grafo para identificar políticos/científicos/empresas clave.
+MODO DE ANÁLISIS — PENSAMIENTO EN ESCENARIOS:
+1. Identifica las 3 narrativas dominantes con mayor corroboración multi-fuente.
+2. Para cada narrativa: imagina el escenario BASE (50%), ALCISTA (30%) y BAJISTA (20%).
+3. Posiciona para el escenario base pero con asimetría de ganancia hacia el alcista.
+4. Detecta qué personajes de alto impacto (CEOs, presidentes, banqueros centrales) están moviendo narrativas — sus próximas acciones previsibles son catalizadores.
+5. Busca activos que el mercado AÚN no ha descontado completamente.
+6. Objetivo: máximo revenue. No te limites a recomendaciones conservadoras si las señales son fuertes.
+
 JSON (sin markdown):
-{{"macro_regime":"risk-on|risk-off|stagflation|reflation|deflation|recovery|uncertainty","macro_regime_description":"str","market_mood":"bullish|bearish|neutral","market_summary":"str","key_themes":["t1","t2","t3","t4","t5"],"sector_rotation":{{"overweight":["s1","s2"],"underweight":["s1","s2"]}},"investments":[{{"asset":"str","type":"stock|etf|crypto|commodity|bond|real_estate|currency|index","priority":8,"signal":"buy|hold|sell|watch","rationale":"str","timeframe":"short|medium|long","risk":"low|medium|high","catalysts":["c1","c2"],"examples":["T1","T2"],"portfolio_weight":"X%","entry_strategy":"str","stop_loss":"str","target":"str","corroboration_score":8,"sources_confirming":["f1","f2"]}}],"macro_hedges":["h1","h2"],"risks":["r1","r2","r3"],"watchlist":["w1","w2"],"disclaimer":"str"}}
-5-7 inversiones. Prioridad 10=máxima urgencia.
-CRÍTICO: en "asset" pon el nombre ESPECÍFICO del activo (ej: "NVIDIA", "Bitcoin", "Apple", "Tesla", "Gold Futures") — NUNCA sectores genéricos ("Tecnología", "Energía", "Mercados emergentes"). En "examples" pon tickers reales (ej: ["NVDA","AMD","TSMC"] o ["BTC","ETH"])."""
+{{"macro_regime":"risk-on|risk-off|stagflation|reflation|deflation|recovery|uncertainty","macro_regime_description":"str — incluye qué escenario domina y por qué","market_mood":"bullish|bearish|neutral","market_summary":"str — qué está pasando, qué VIENE, qué precio ya descuenta el mercado y qué no","key_themes":["t1","t2","t3","t4","t5"],"sector_rotation":{{"overweight":["s1","s2"],"underweight":["s1","s2"]}},"investments":[{{"asset":"NOMBRE ESPECÍFICO (ej: NVIDIA, Bitcoin, Tesla, Gold)","type":"stock|etf|crypto|commodity|bond|real_estate|currency|index","priority":8,"signal":"buy|hold|sell|watch","rationale":"str — incluye: qué catalizador específico lo mueve, escenario imaginado, por qué el mercado no lo ha descontado aún","timeframe":"short|medium|long","risk":"low|medium|high","catalysts":["catalizador concreto con fecha o trigger","c2"],"examples":["TICKER1","TICKER2"],"portfolio_weight":"X%","entry_strategy":"str — precio de entrada, condición o trigger exacto","stop_loss":"str — nivel o % con justificación","target":"str — precio objetivo o % ganancia en escenario base y alcista","corroboration_score":8,"sources_confirming":["f1","f2"]}}],"macro_hedges":["cobertura específica 1","cobertura 2"],"risks":["riesgo concreto con impacto estimado","r2","r3"],"watchlist":["activo + razón + trigger a vigilar","w2"],"disclaimer":"str"}}
+5-8 inversiones. Prioridad 10=máxima urgencia/convicción.
+CRÍTICO: "asset" = nombre ESPECÍFICO (NVIDIA, Bitcoin, Apple) — NUNCA sectores genéricos. "examples" = tickers reales."""
 
     resp = get_openai_client().chat.completions.create(
         model="gpt-4.1-mini",
         max_tokens=2500,
-        temperature=0,
+        temperature=0.35,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system},
