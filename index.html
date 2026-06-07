@@ -570,6 +570,7 @@ function renderResults(data){
       <div class="icard-meta">
         <span class="sig-badge ${inv.signal}">${sigMap[inv.signal]||inv.signal}</span>
         <span class="pill">${tfMap[inv.timeframe]||'—'}</span>
+        ${inv.streak>=2?'<span class="pill" style="color:var(--green);border-color:color-mix(in srgb,var(--green) 30%,transparent)">✓ Confirmada</span>':inv.streak===1?'<span class="pill" style="color:var(--yellow);border-color:color-mix(in srgb,var(--yellow) 30%,transparent)">↑ Repetida</span>':'<span class="pill" style="color:var(--muted)">✦ Nueva</span>'}
         <div class="risk-dots">${riskDots(inv.risk)}</div>
       </div>
       <div class="icard-rationale">${inv.rationale||''}</div>

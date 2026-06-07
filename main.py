@@ -94,7 +94,7 @@ def get_openai_client() -> OpenAI:
     return _openai_client
 
 # Server state — single user app
-_state: dict = {"analysis": {}, "articles": [], "fetched_at": None, "graph": None}
+_state: dict = {"analysis": {}, "articles": [], "fetched_at": None, "graph": None, "history": []}
 
 # ─── 80+ FEEDS ───────────────────────────────────────────────────────────────
 FEEDS = {
@@ -854,6 +854,39 @@ NOTICIAS:{article_titles}"""
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+# ─── PERSISTENCE TRACKING ────────────────────────────────────────────────────
+
+def _normalize_asset(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+def tag_persistence(investments: list[dict], history: list[dict]) -> list[dict]:
+    """Tag each investment with how many previous analyses included the same asset."""
+    # Build lookup: normalized_asset → max streak count from history
+    historical: dict[str, int] = {}
+    for past in history[-4:]:  # look at last 4 analyses
+        for inv in past.get("investments", []):
+            key = _normalize_asset(inv.get("asset", ""))
+            historical[key] = historical.get(key, 0) + 1
+
+    for inv in investments:
+        key = _normalize_asset(inv.get("asset", ""))
+        streak = historical.get(key, 0)
+        inv["streak"] = streak  # 0 = new, 1 = seen once before, 2+ = confirmed
+    return investments
+
+
+def save_to_history(analysis: dict) -> None:
+    snapshot = {
+        "generated_at": analysis.get("generated_at"),
+        "investments": [
+            {"asset": i.get("asset"), "signal": i.get("signal"), "priority": i.get("priority")}
+            for i in analysis.get("investments", [])
+        ],
+    }
+    _state["history"].append(snapshot)
+    _state["history"] = _state["history"][-5:]  # keep last 5
+
+
 # ─── ENDPOINTS ───────────────────────────────────────────────────────────────
 CACHE_TTL_HOURS = 2
 
@@ -887,9 +920,13 @@ async def analyze(force: bool = False):
     analysis["sources_used"] = sorted(set(a["source"] for a in articles))
     analysis["generated_at"] = datetime.now().isoformat()
 
+    # Tag each investment with persistence streak from history
+    analysis["investments"] = tag_persistence(analysis.get("investments", []), _state["history"])
+
     _state["analysis"] = analysis
     _state["articles"] = articles
     _state["fetched_at"] = datetime.now().isoformat()
+    save_to_history(analysis)
 
     sent = send_buy_alert(analysis.get("investments", []), analysis["generated_at"])
     if sent:
