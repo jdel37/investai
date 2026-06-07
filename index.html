@@ -531,7 +531,8 @@ function renderResults(data){
   mb.textContent=data.mode==='graph-only'?'Grafo':'IA';
   mb.className=`mode-pill ${data.mode==='graph-only'?'graph':'ai'}`;
   document.getElementById('moodSummary').textContent=data.market_summary||'';
-  document.getElementById('generatedAt').textContent=data.generated_at?fmtDate(data.generated_at):'';
+  const cacheTag = data.cached ? ` · caché ${data.cache_age_min}min` : '';
+  document.getElementById('generatedAt').textContent=(data.generated_at?fmtDate(data.generated_at):'')+cacheTag;
   document.getElementById('themes').innerHTML=(data.key_themes||[]).map(t=>`<span class="theme-tag">${t}</span>`).join('');
 
   // Stats

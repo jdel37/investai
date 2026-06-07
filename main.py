@@ -794,6 +794,7 @@ CRÍTICO: en "asset" pon el nombre ESPECÍFICO del activo (ej: "NVIDIA", "Bitcoi
     resp = get_openai_client().chat.completions.create(
         model="gpt-4.1-mini",
         max_tokens=2500,
+        temperature=0,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system},
@@ -854,8 +855,22 @@ NOTICIAS:{article_titles}"""
 
 
 # ─── ENDPOINTS ───────────────────────────────────────────────────────────────
+CACHE_TTL_HOURS = 2
+
 @app.get("/api/analyze")
-async def analyze():
+async def analyze(force: bool = False):
+    # Return cached analysis if < CACHE_TTL_HOURS old and force=False
+    if not force and _state["analysis"] and _state["fetched_at"]:
+        try:
+            age = (datetime.now() - datetime.fromisoformat(_state["fetched_at"])).total_seconds() / 3600
+            if age < CACHE_TTL_HOURS:
+                cached = dict(_state["analysis"])
+                cached["cached"] = True
+                cached["cache_age_min"] = round(age * 60)
+                return cached
+        except Exception:
+            pass
+
     articles = await gather_news()
     if not articles:
         return JSONResponse({"error": "No se pudieron obtener noticias"}, status_code=503)
