@@ -57,13 +57,28 @@ TIER1_SOURCES = {
     "BBC Business","BBC World","FT","Bloomberg Markets","Bloomberg Tech",
     "AP Business","AP Politics","WSJ Markets","WSJ Economy",
     "The Economist Finance","Nikkei Asia",
+    # expanded — wire services + papers of record + primary data
+    "NYT Business","NYT Economy","Guardian Business","Bloomberg Economics",
+    "Federal Reserve","ECB Press","Bank of England","US Treasury","BLS Releases",
+    "S&P Global",
 }
 TIER2_SOURCES = {
     "CNBC Markets","CNBC Economy","CNBC Tech","CNBC Top News",
     "MarketWatch Top","MarketWatch Markets","Foreign Policy","CFR",
     "Brookings","SCMP Business","Deutsche Welle Biz","Barrons",
-    "Federal Reserve","ECB Speeches","IMF Blog","US Treasury","BIS Speeches",
+    "ECB Speeches","IMF Blog","BIS Speeches",
     "Peterson IIE","SEC Press","POLITICO Economy","Axios Markets",
+    # expanded
+    "NPR Economy","CNN Business","Fortune","Forbes Markets","Guardian World",
+    "Bloomberg Politics","Investing.com","Morningstar","Kitco Gold","OECD",
+    "World Bank Blog",
+}
+
+# Sentiment/rumor sources — useful for crowd signal but NOT for fact corroboration.
+# Claims appearing ONLY here are treated as low-credibility (possible fake/unverified).
+SENTIMENT_SOURCES = {
+    "Reddit Investing","Reddit WSB","Reddit Economics","Reddit Stocks","Reddit Crypto",
+    "Zero Hedge","Hacker News","CoinGape","Crypto Briefing","CryptoSlate",
 }
 
 # ─── MARKET TICKERS ──────────────────────────────────────────────────────────
@@ -230,6 +245,30 @@ FEEDS = {
     "Hussman Funds":         "https://hussmanfunds.com/rss/",
     "Morningstar":           "https://www.morningstar.com/news/rss.xml",
     "Seeking Alpha Premium": "https://seekingalpha.com/articles/investing-strategy.xml",
+
+    # EXPANDED COVERAGE — broad reputable outlets (más fuentes = mejor corroboración)
+    "Guardian Business":     "https://www.theguardian.com/uk/business/rss",
+    "Guardian World":        "https://www.theguardian.com/world/rss",
+    "NYT Business":          "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+    "NYT Economy":           "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",
+    "NPR Economy":           "https://feeds.npr.org/1017/rss.xml",
+    "CNN Business":          "http://rss.cnn.com/rss/money_latest.rss",
+    "Fortune":               "https://fortune.com/feed/",
+    "Forbes Markets":        "https://www.forbes.com/markets/feed/",
+    "Quartz":                "https://qz.com/rss",
+    "Bloomberg Economics":   "https://feeds.bloomberg.com/economics/news.rss",
+    "Bloomberg Politics":    "https://feeds.bloomberg.com/politics/news.rss",
+    "Investing.com":         "https://www.investing.com/rss/news.rss",
+    "Investing Commodities": "https://www.investing.com/rss/commodities_News.rss",
+    "Kitco Gold":            "https://www.kitco.com/rss/KitcoNewsRSS.xml",
+    # OFFICIAL / DATA (alta veracidad — fuente primaria)
+    "Bank of England":       "https://www.bankofengland.co.uk/rss/news",
+    "ECB Press":             "https://www.ecb.europa.eu/rss/press.html",
+    "BLS Releases":          "https://www.bls.gov/feed/news_release.rss",
+    "S&P Global":            "https://www.spglobal.com/en/rss/news",
+    # CRYPTO (más cobertura)
+    "Bankless":              "https://newsletter.banklesshq.com/feed",
+    "CoinGape":              "https://coingape.com/feed/",
 }
 
 # Feeds de solo Tier-1 para check rápido de breaking news
@@ -322,7 +361,66 @@ async def gather_news() -> list[dict]:
                 seen_titles.add(norm)
                 articles.append(art)
 
-    return articles
+    return assess_credibility(articles)
+
+
+# ─── FAKE-NEWS / CREDIBILITY FILTER ──────────────────────────────────────────
+# Clickbait / sensationalism markers — hallmark of low-quality or fake content.
+CLICKBAIT_MARKERS = (
+    "you won't believe", "you wont believe", "shocking", "mind-blowing", "jaw-dropping",
+    "this one trick", "doctors hate", "what happens next", "will blow your mind",
+    "secret that", "they don't want you", "get rich", "make millions", "millionaire overnight",
+    "guaranteed profit", "guaranteed returns", "100x", "1000x", "to the moon", "next bitcoin",
+    "can't miss", "must buy now", "explodes", "skyrockets", "going parabolic", "free money",
+)
+_HYPE_RE = re.compile(r"(!!!|\?!|\?\?\?|\$\$\$)")
+# Tokens that signal an unverified claim (needs corroboration before trusting).
+_RUMOR_RE = re.compile(r"\b(rumor|rumour|alleged|unconfirmed|leak(?:ed)?|sources say|reportedly|speculat)\w*\b", re.I)
+
+
+def assess_credibility(articles: list[dict]) -> list[dict]:
+    """Tag each article with a credibility score and drop obvious junk.
+
+    Score factors: source tier, clickbait/hype markers, unverified-rumor phrasing.
+    Pure-sentiment-source + clickbait items are dropped (likely noise/fake)."""
+    kept = []
+    for art in articles:
+        src = art.get("source", "")
+        title = art.get("title", "")
+        text = (title + " " + art.get("summary", "")).lower()
+
+        if src in TIER1_SOURCES:
+            score = 3.0
+        elif src in TIER2_SOURCES:
+            score = 2.0
+        elif src in SENTIMENT_SOURCES:
+            score = 0.6
+        else:
+            score = 1.3
+
+        clickbait = sum(1 for m in CLICKBAIT_MARKERS if m in text)
+        if clickbait:
+            score -= 1.2 * clickbait
+        if _HYPE_RE.search(title):
+            score -= 0.8
+        # ALL-CAPS shouting (>=2 long all-caps words, excluding known tickers/acronyms)
+        caps = re.findall(r"\b[A-Z]{4,}\b", title)
+        if len(caps) >= 2:
+            score -= 0.5
+        is_rumor = bool(_RUMOR_RE.search(text))
+        if is_rumor and src not in TIER1_SOURCES:
+            score -= 0.6  # unverified claim from non-wire source
+
+        art["cred_score"] = round(score, 2)
+        art["is_rumor"] = is_rumor
+        art["credibility"] = "high" if score >= 2.5 else "medium" if score >= 1.2 else "low"
+
+        # Drop only the clear garbage: untrusted/sentiment source AND clickbait.
+        if src not in TIER1_SOURCES and src not in TIER2_SOURCES and clickbait and score < 0.5:
+            continue
+        kept.append(art)
+
+    return kept
 
 
 def build_corroboration_map(articles: list[dict]) -> dict:
@@ -339,6 +437,7 @@ def build_corroboration_map(articles: list[dict]) -> dict:
     entity_sources: dict[str, set] = {}
     entity_tier1: dict[str, int] = {}
     entity_high_impact: dict[str, bool] = {}
+    entity_credible_srcs: dict[str, set] = {}  # non-sentiment sources only
 
     for art in articles:
         src = art["source"]
@@ -356,15 +455,20 @@ def build_corroboration_map(articles: list[dict]) -> dict:
             entity_sources.setdefault(e, set()).add(src)
             if src in TIER1_SOURCES:
                 entity_tier1[e] = entity_tier1.get(e, 0) + 1
+            if src not in SENTIMENT_SOURCES:
+                entity_credible_srcs.setdefault(e, set()).add(src)
             if any(p.lower() in e.lower() for p in HIGH_IMPACT_PERSONS):
                 entity_high_impact[e] = True
 
-    # Score: base count + tier1 bonus + high-impact bonus
+    # Score: base count + tier1 bonus + high-impact bonus.
+    # Anti-fake-news gate: require >=2 NON-sentiment sources, else it's rumor-level — skip.
     scored = {}
     for e, srcs in entity_sources.items():
         base = len(srcs)
         if base < 3:
             continue
+        if len(entity_credible_srcs.get(e, set())) < 2:
+            continue  # only echoed by Reddit/ZeroHedge-type sources → not corroborated fact
         t1_bonus = entity_tier1.get(e, 0) * 0.5
         hi_bonus = 2.0 if entity_high_impact.get(e) else 0.0
         scored[e] = round(base + t1_bonus + hi_bonus, 1)
@@ -773,42 +877,55 @@ def analyze_with_gpt(articles: list[dict], graph_context: str = "") -> dict:
     titles = "\n".join(f"[{a['source']}] {a['title']}" for a in ranked[30:100])
     articles_text = detail + ("\n\n---\n" + titles if titles else "")
 
+    cred_counts = {"high": 0, "medium": 0, "low": 0}
+    for a in articles:
+        cred_counts[a.get("credibility", "medium")] = cred_counts.get(a.get("credibility", "medium"), 0) + 1
+    cred_section = (f"\nCREDIBILIDAD FUENTES: {cred_counts['high']} alta / "
+                    f"{cred_counts['medium']} media / {cred_counts['low']} baja. "
+                    "La corroboración multi-fuente de abajo YA excluye rumores de fuentes no verificadas.\n")
+
     market = fetch_market_snapshot()
     market_section = f"\nMERCADO AHORA:{market}\n" if market else ""
     graph_section = f"\nGRAFO:{graph_context}\n" if graph_context else ""
 
     system = (
-        "Eres un gestor de hedge fund top con 20 años de experiencia. "
+        "Eres un gestor de patrimonio top con 20 años de experiencia, especializado en "
+        "construcción de riqueza a LARGO PLAZO mediante aportes mensuales (DCA) y capitalización compuesta. "
         "Piensas en escenarios, no solo en datos actuales. "
-        "Tu objetivo: MAXIMIZAR el revenue del inversor. "
-        "Eres audaz, específico, y no te limitas a describir lo que ya pasó — "
-        "proyectas qué VA A PASAR y posicionas antes de que el mercado lo descuente. "
+        "Tu objetivo: MAXIMIZAR el patrimonio del inversor en horizonte de 5-15 años. "
+        "Filosofía núcleo-satélite: un NÚCLEO diversificado de bajo costo y baja rotación (índices amplios, "
+        "megatendencias estructurales) que se compra cada mes pase lo que pase, más SATÉLITES de alta convicción "
+        "para amplificar el retorno. Priorizas tendencias seculares duraderas sobre el ruido de corto plazo. "
+        "Eres audaz pero disciplinado: aprovechas las caídas para acumular más, no para vender con pánico. "
         "Solo JSON válido. Español."
     )
 
     user = f"""Fecha:{datetime.now().strftime('%Y-%m-%d %H:%M')} Fuentes:{len(set(a['source'] for a in articles))} Artículos:{len(articles)}
 MERCADO ACTUAL:{market_section.strip()}
-CORROBORACIÓN MULTI-FUENTE:{corr_text}
+{cred_section}CORROBORACIÓN MULTI-FUENTE (ya filtrada de fake-news):{corr_text}
 {graph_section}
 NOTICIAS CLAVE:
 {articles_text[:6000]}
 
-MODO DE ANÁLISIS — PENSAMIENTO EN ESCENARIOS:
+MODO DE ANÁLISIS — RIQUEZA A LARGO PLAZO CON APORTES MENSUALES (DCA):
+El inversor ahorra cada mes y reinvierte. NO le interesa el trading de corto plazo. Horizonte: 5-15 años.
 1. Identifica las 3 narrativas dominantes con mayor corroboración multi-fuente.
-2. Para cada narrativa: imagina el escenario BASE (50%), ALCISTA (30%) y BAJISTA (20%).
-3. Posiciona para el escenario base pero con asimetría de ganancia hacia el alcista.
-4. Detecta qué personajes de alto impacto (CEOs, presidentes, banqueros centrales) están moviendo narrativas — sus próximas acciones previsibles son catalizadores.
-5. Busca activos que el mercado AÚN no ha descontado completamente.
-6. Objetivo: máximo revenue. No te limites a recomendaciones conservadoras si las señales son fuertes.
+2. Distingue señal estructural (megatendencias de años: IA, energía, demografía, desdolarización) del ruido pasajero.
+3. NÚCLEO (long_term_core): la base que se compra TODOS los meses sin importar el titular. Índices amplios y diversificados + 1-2 megatendencias duraderas. Baja rotación, máxima capitalización compuesta. Esto debe ser ESTABLE entre análisis.
+4. SATÉLITES (investments): apuestas de mayor convicción para amplificar retorno. Prioriza timeframe "long" y "medium"; usa "short" solo si la señal es excepcional.
+5. Para cada idea imagina escenario BASE (50%), ALCISTA (30%), BAJISTA (20%). En las caídas, el plan es ACUMULAR más barato, no vender.
+6. expected_annual_return: estima retorno anualizado realista a largo plazo por activo (ej "8-12%").
+7. Objetivo: máximo patrimonio compuesto a 10 años. Disciplina sobre euforia.
+8. SEÑALES DE COMPRA HONESTAS: solo marca signal="buy" si la tesis está corroborada por >=2 fuentes fiables. corroboration_score (0-10) debe reflejar la corroboración REAL — no infles. Una señal "buy" con corroboración débil será degradada automáticamente a "watch", así que sé riguroso. Si dudas, usa "watch".
 
 JSON (sin markdown):
-{{"macro_regime":"risk-on|risk-off|stagflation|reflation|deflation|recovery|uncertainty","macro_regime_description":"str — incluye qué escenario domina y por qué","market_mood":"bullish|bearish|neutral","market_summary":"str — qué está pasando, qué VIENE, qué precio ya descuenta el mercado y qué no","key_themes":["t1","t2","t3","t4","t5"],"sector_rotation":{{"overweight":["s1","s2"],"underweight":["s1","s2"]}},"investments":[{{"asset":"NOMBRE ESPECÍFICO (ej: NVIDIA, Bitcoin, Tesla, Gold)","type":"stock|etf|crypto|commodity|bond|real_estate|currency|index","priority":8,"signal":"buy|hold|sell|watch","rationale":"str — incluye: qué catalizador específico lo mueve, escenario imaginado, por qué el mercado no lo ha descontado aún","timeframe":"short|medium|long","risk":"low|medium|high","catalysts":["catalizador concreto con fecha o trigger","c2"],"examples":["TICKER1","TICKER2"],"portfolio_weight":"X%","entry_strategy":"str — precio de entrada, condición o trigger exacto","stop_loss":"str — nivel o % con justificación","target":"str — precio objetivo o % ganancia en escenario base y alcista","corroboration_score":8,"sources_confirming":["f1","f2"]}}],"macro_hedges":["cobertura específica 1","cobertura 2"],"risks":["riesgo concreto con impacto estimado","r2","r3"],"watchlist":["activo + razón + trigger a vigilar","w2"],"disclaimer":"str"}}
-5-8 inversiones. Prioridad 10=máxima urgencia/convicción.
-CRÍTICO: "asset" = nombre ESPECÍFICO (NVIDIA, Bitcoin, Apple) — NUNCA sectores genéricos. "examples" = tickers reales."""
+{{"macro_regime":"risk-on|risk-off|stagflation|reflation|deflation|recovery|uncertainty","macro_regime_description":"str — incluye qué escenario domina y por qué","market_mood":"bullish|bearish|neutral","market_summary":"str — qué está pasando, qué VIENE, qué precio ya descuenta el mercado y qué no","key_themes":["t1","t2","t3","t4","t5"],"secular_trends":["megatendencia estructural de varios años + por qué perdura","t2","t3"],"sector_rotation":{{"overweight":["s1","s2"],"underweight":["s1","s2"]}},"long_term_core":[{{"asset":"NOMBRE ESPECÍFICO (ej: MSCI World, S&P 500, Bitcoin)","type":"etf|index|crypto|stock","examples":["TICKER ej VWCE, SPY, IWDA"],"core_weight":"X%","rationale":"por qué es base de cartera a 10 años","expected_annual_return":"8-12%","risk":"low|medium|high"}}],"investments":[{{"asset":"NOMBRE ESPECÍFICO (ej: NVIDIA, Bitcoin, Tesla, Gold)","type":"stock|etf|crypto|commodity|bond|real_estate|currency|index","priority":8,"signal":"buy|hold|sell|watch","rationale":"str — qué tendencia estructural lo respalda y por qué compone a largo plazo","timeframe":"short|medium|long","risk":"low|medium|high","expected_annual_return":"10-15%","catalysts":["catalizador concreto con fecha o trigger","c2"],"examples":["TICKER1","TICKER2"],"portfolio_weight":"X%","entry_strategy":"str — para DCA: \"comprar cada mes\" o condición de acumulación extra","stop_loss":"str — nivel o tesis de salida (a largo plazo: qué invalidaría la idea)","target":"str — precio/retorno objetivo en escenario base y alcista a 3-5 años","corroboration_score":8,"sources_confirming":["f1","f2"]}}],"dca_guidance":"str — cómo repartir el aporte mensual entre núcleo y satélites y cuándo acumular extra","macro_hedges":["cobertura específica 1","cobertura 2"],"risks":["riesgo concreto con impacto estimado","r2","r3"],"watchlist":["activo + razón + trigger a vigilar","w2"],"disclaimer":"str"}}
+3-4 activos en long_term_core (suma core_weight ≈ 100%). 5-8 investments (satélites).
+Prioridad 10=máxima convicción. CRÍTICO: "asset" = nombre ESPECÍFICO — NUNCA sectores genéricos. "examples" = tickers reales."""
 
     resp = get_openai_client().chat.completions.create(
         model="gpt-4.1-mini",
-        max_tokens=2500,
+        max_tokens=3500,
         temperature=0.35,
         response_format={"type": "json_object"},
         messages=[
@@ -890,6 +1007,45 @@ def tag_persistence(investments: list[dict], history: list[dict]) -> list[dict]:
     return investments
 
 
+def validate_buy_signals(investments: list[dict], corroboration: dict) -> list[dict]:
+    """Review every BUY before it reaches the user. Downgrade weak/uncorroborated buys
+    to WATCH so alerts only fire on genuinely confirmed signals.
+
+    A BUY survives only if: corroboration_score >= 6 AND >=2 confirming sources.
+    High-risk buys need corroboration_score >= 7. Anything weaker → watch + reason."""
+    corr_lower = {k.lower(): v for k, v in corroboration.items()}
+    for inv in investments:
+        if inv.get("signal") != "buy":
+            continue
+        try:
+            cs = float(inv.get("corroboration_score", 0))
+        except Exception:
+            cs = 0.0
+        confirming = inv.get("sources_confirming", []) or []
+        risk = inv.get("risk", "medium")
+
+        # Cross-check: is the asset name actually present in the multi-source consensus?
+        name = inv.get("asset", "").lower()
+        in_consensus = any(tok in corr_lower for tok in name.split()) or name in corr_lower
+
+        min_cs = 7.0 if risk == "high" else 6.0
+        reasons = []
+        if cs < min_cs:
+            reasons.append(f"corroboración {cs:g}<{min_cs:g}")
+        if len(confirming) < 2:
+            reasons.append("menos de 2 fuentes confirman")
+        if not in_consensus and cs < 8:
+            reasons.append("no aparece en el consenso multi-fuente")
+
+        if reasons:
+            inv["signal"] = "watch"
+            inv["downgraded_from"] = "buy"
+            inv["downgrade_reason"] = "; ".join(reasons)
+        else:
+            inv["validated_buy"] = True
+    return investments
+
+
 def save_to_history(analysis: dict) -> None:
     snapshot = {
         "generated_at": analysis.get("generated_at"),
@@ -937,6 +1093,8 @@ async def analyze(force: bool = False):
 
     # Tag each investment with persistence streak from history
     analysis["investments"] = tag_persistence(analysis.get("investments", []), _state["history"])
+    # Review BUY signals — downgrade uncorroborated ones to WATCH before they reach alerts
+    analysis["investments"] = validate_buy_signals(analysis["investments"], build_corroboration_map(articles))
 
     _state["analysis"] = analysis
     _state["articles"] = articles
@@ -1082,6 +1240,249 @@ async def portfolio(budget: float = 1000.0, currency: str = "USD"):
     }
 
 
+# ─── DCA / LONG-TERM PLAN ─────────────────────────────────────────────────────
+
+# Profile → (core %, satellite %). Core = diversified low-churn base bought every month.
+RISK_PROFILES = {
+    "conservador": (0.80, 0.20),
+    "balanceado":  (0.60, 0.40),
+    "agresivo":    (0.40, 0.60),
+}
+
+# Fallback core if GPT analysis lacks long_term_core (broad diversified, low cost).
+DEFAULT_CORE = [
+    {"asset": "MSCI World", "type": "etf", "examples": ["VWCE", "IWDA"], "core_weight": "55%",
+     "rationale": "Renta variable global diversificada — base de capitalización compuesta a largo plazo.",
+     "expected_annual_return": "7-9%", "risk": "medium"},
+    {"asset": "S&P 500", "type": "etf", "examples": ["SPY", "CSPX"], "core_weight": "30%",
+     "rationale": "Megacaps EEUU, motor de innovación e IA.", "expected_annual_return": "8-10%", "risk": "medium"},
+    {"asset": "Bitcoin", "type": "crypto", "examples": ["BTC"], "core_weight": "15%",
+     "rationale": "Activo escaso no correlacionado — asimetría al alza a 10 años.",
+     "expected_annual_return": "15-25%", "risk": "high"},
+]
+
+
+def _parse_pct(s, default=0.0) -> float:
+    try:
+        return float(re.sub(r"[^0-9.]", "", str(s)))
+    except Exception:
+        return default
+
+
+def _parse_return(s, default=8.0) -> float:
+    """'8-12%' → 10.0 (midpoint). '12%' → 12.0."""
+    nums = re.findall(r"[0-9]+\.?[0-9]*", str(s))
+    if not nums:
+        return default
+    vals = [float(n) for n in nums[:2]]
+    return sum(vals) / len(vals)
+
+
+# Map common asset names → a tradeable ticker for volatility lookup.
+_NAME_TO_TICKER = {
+    "bitcoin": "BTC-USD", "btc": "BTC-USD", "ethereum": "ETH-USD", "eth": "ETH-USD",
+    "s&p 500": "SPY", "sp500": "SPY", "s&p500": "SPY", "nasdaq": "QQQ",
+    "msci world": "URTH", "gold": "GLD", "oro": "GLD", "silver": "SLV", "plata": "SLV",
+    "oil": "CL=F", "petróleo": "CL=F", "nvidia": "NVDA", "apple": "AAPL", "tesla": "TSLA",
+    "microsoft": "MSFT", "amazon": "AMZN", "google": "GOOGL", "alphabet": "GOOGL",
+    "meta": "META", "treasuries": "TLT", "bonds": "TLT", "bonos": "TLT",
+}
+_RISK_CACHE: dict = {}  # ticker → (annual_return_pct, annual_vol_pct, ts)
+_RISK_TTL = 6 * 3600
+
+
+def _resolve_ticker(asset: str, examples: list) -> str | None:
+    for ex in (examples or []):
+        t = str(ex).strip().upper()
+        if t and re.fullmatch(r"[A-Z0-9.\-=^]{1,12}", t):
+            return t
+    return _NAME_TO_TICKER.get((asset or "").lower().strip())
+
+
+def _ticker_stats(ticker: str):
+    """Annualized (return%, volatility%) from ~2y of daily closes. Cached. None on failure."""
+    if not HAS_YF or not ticker:
+        return None
+    now = datetime.now().timestamp()
+    hit = _RISK_CACHE.get(ticker)
+    if hit and now - hit[2] < _RISK_TTL:
+        return hit[0], hit[1]
+    try:
+        hist = yf.Ticker(ticker).history(period="2y", interval="1d")
+        closes = hist["Close"].dropna()
+        if len(closes) < 60:
+            return None
+        rets = closes.pct_change().dropna()
+        vol = float(rets.std() * (252 ** 0.5) * 100)
+        cagr = float((closes.iloc[-1] / closes.iloc[0]) ** (252 / len(closes)) - 1) * 100
+        _RISK_CACHE[ticker] = (round(cagr, 1), round(vol, 1), now)
+        return round(cagr, 1), round(vol, 1)
+    except Exception:
+        return None
+
+
+def compute_portfolio_risk(holdings: list[dict]) -> dict:
+    """Given [{asset, examples, monthly_amount, expected_annual_return}], derive a
+    market-data-grounded volatility & risk rating. Falls back gracefully if yfinance down."""
+    total = sum(h.get("monthly_amount", 0) for h in holdings) or 1
+    wvol = 0.0
+    whist_ret = 0.0
+    covered = 0.0
+    per_asset = []
+    for h in holdings:
+        w = h.get("monthly_amount", 0) / total
+        ticker = _resolve_ticker(h.get("asset", ""), h.get("examples", []))
+        stats = _ticker_stats(ticker) if ticker else None
+        if stats:
+            ret, vol = stats
+            wvol += w * vol
+            whist_ret += w * ret
+            covered += w
+            per_asset.append({"asset": h.get("asset"), "ticker": ticker,
+                              "annual_vol_pct": vol, "hist_return_pct": ret})
+        else:
+            # fallback vol by qualitative risk
+            qv = {"low": 12, "medium": 22, "high": 55}.get(h.get("risk", "medium"), 22)
+            wvol += w * qv
+    rating = "low" if wvol < 15 else "medium" if wvol < 30 else "high"
+    return {
+        "portfolio_vol_pct": round(wvol, 1),
+        "coverage": round(covered, 2),
+        "hist_return_pct": round(whist_ret / covered, 1) if covered > 0 else None,
+        "rating": rating,
+        "per_asset": per_asset,
+    }
+
+
+def _project_dca(current: float, monthly: float, years: int, annual_pct: float) -> dict:
+    """Future value of an initial lump + monthly contributions (annuity-due) compounding annually."""
+    i = annual_pct / 100 / 12
+    n = years * 12
+    if i == 0:
+        fv = current + monthly * n
+    else:
+        fv = current * (1 + i) ** n + monthly * (((1 + i) ** n - 1) / i) * (1 + i)
+    contributed = current + monthly * n
+    return {
+        "annual_return_pct": round(annual_pct, 1),
+        "future_value": round(fv, 2),
+        "contributed": round(contributed, 2),
+        "profit": round(fv - contributed, 2),
+        "multiple": round(fv / contributed, 2) if contributed > 0 else 0,
+    }
+
+
+@app.get("/api/dca")
+async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
+              profile: str = "balanceado", currency: str = "USD"):
+    """Long-term monthly savings plan: núcleo/satélite split + compound-interest projection."""
+    analysis = _state.get("analysis")
+    if not analysis or not analysis.get("investments"):
+        return JSONResponse({"error": "Sin análisis. Ejecuta 'Analizar' primero."}, status_code=400)
+
+    monthly = max(0.0, float(monthly))
+    current = max(0.0, float(current))
+    years = max(1, min(40, int(years)))
+    core_share, sat_share = RISK_PROFILES.get(profile, RISK_PROFILES["balanceado"])
+
+    # ── Núcleo: estable, baja rotación ──
+    core_src = analysis.get("long_term_core") or DEFAULT_CORE
+    core_weights = [_parse_pct(c.get("core_weight"), 0) for c in core_src]
+    if sum(core_weights) <= 0:
+        core_weights = [1.0] * len(core_src)
+    core_total = sum(core_weights)
+    core_budget = monthly * core_share
+    core = []
+    for c, w in zip(core_src, core_weights):
+        amt = round(core_budget * w / core_total, 2)
+        if amt <= 0:
+            continue
+        core.append({
+            "asset": c.get("asset"), "type": c.get("type", "etf"),
+            "examples": c.get("examples", []),
+            "monthly_amount": amt,
+            "pct_of_plan": round(amt / monthly * 100, 1) if monthly else 0,
+            "expected_annual_return": c.get("expected_annual_return", ""),
+            "risk": c.get("risk", "medium"),
+            "rationale": c.get("rationale", ""),
+        })
+
+    # ── Satélites: convicción, prioriza largo/medio plazo ──
+    sats = [i for i in analysis["investments"]
+            if i.get("signal") in ("buy", "watch", "hold")]
+    tf_rank = {"long": 0, "medium": 1, "short": 2}
+    sats.sort(key=lambda x: (tf_rank.get(x.get("timeframe"), 3), -x.get("priority", 0)))
+    sats = sats[:6]
+    sat_weights = [_parse_pct(s.get("portfolio_weight"), 0) or s.get("priority", 5) for s in sats]
+    sat_total = sum(sat_weights) or 1
+    sat_budget = monthly * sat_share
+    satellites = []
+    for s, w in zip(sats, sat_weights):
+        amt = round(sat_budget * w / sat_total, 2)
+        if amt <= 0:
+            continue
+        satellites.append({
+            "asset": s.get("asset"), "type": s.get("type"),
+            "examples": s.get("examples", []),
+            "monthly_amount": amt,
+            "pct_of_plan": round(amt / monthly * 100, 1) if monthly else 0,
+            "signal": s.get("signal"), "priority": s.get("priority"),
+            "timeframe": s.get("timeframe"), "risk": s.get("risk"),
+            "expected_annual_return": s.get("expected_annual_return", ""),
+            "streak": s.get("streak", 0),
+            "rationale": s.get("rationale", ""),
+            "target": s.get("target", ""),
+        })
+
+    # ── Retorno esperado ponderado de toda la cartera ──
+    all_alloc = [(c["monthly_amount"], _parse_return(c.get("expected_annual_return"), 8)) for c in core] + \
+                [(s["monthly_amount"], _parse_return(s.get("expected_annual_return"), 12)) for s in satellites]
+    wsum = sum(a for a, _ in all_alloc) or 1
+    weighted_return = sum(a * r for a, r in all_alloc) / wsum
+
+    # ── Riesgo real basado en datos de mercado (volatilidad histórica) ──
+    risk = compute_portfolio_risk(core + satellites)
+    # Blend GPT-expected return with market-historical return when available (más certero)
+    if risk["hist_return_pct"] is not None and risk["coverage"] >= 0.4:
+        base_r = round(0.6 * weighted_return + 0.4 * risk["hist_return_pct"], 1)
+    else:
+        base_r = round(weighted_return, 1)
+
+    # ── Bandas de proyección derivadas de la volatilidad real, no fijas ──
+    # Dispersión anualizada del retorno medio se reduce con el horizonte: vol/sqrt(años).
+    vol = risk["portfolio_vol_pct"] or 20.0
+    band = vol / (years ** 0.5)               # 1σ del retorno anualizado a 'years' años
+    pess_r = max(0.0, base_r - band)
+    opt_r = base_r + band
+    scenarios = {
+        "pesimista":  _project_dca(current, monthly, years, pess_r),
+        "base":       _project_dca(current, monthly, years, base_r),
+        "optimista":  _project_dca(current, monthly, years, opt_r),
+    }
+    for k, prob in (("pesimista", "~16%"), ("base", "~50%"), ("optimista", "~16%")):
+        scenarios[k]["probability"] = prob
+
+    return {
+        "risk": risk,
+        "monthly": round(monthly, 2),
+        "years": years,
+        "current_savings": round(current, 2),
+        "profile": profile if profile in RISK_PROFILES else "balanceado",
+        "split": {"core_pct": round(core_share * 100), "satellite_pct": round(sat_share * 100)},
+        "currency": currency,
+        "weighted_expected_return": base_r,
+        "core": core,
+        "satellites": satellites,
+        "projection": scenarios,
+        "dca_guidance": analysis.get("dca_guidance", ""),
+        "secular_trends": analysis.get("secular_trends", []),
+        "macro_regime": analysis.get("macro_regime", ""),
+        "generated_at": analysis.get("generated_at", ""),
+        "disclaimer": analysis.get("disclaimer", ""),
+        "note": "Usando núcleo del análisis IA." if analysis.get("long_term_core") else "Usando núcleo diversificado por defecto.",
+    }
+
+
 @app.get("/api/scheduled-analysis")
 async def scheduled_analysis():
     """Vercel cron: full analysis every 3 days + digest email."""
@@ -1097,6 +1498,8 @@ async def scheduled_analysis():
     analysis["articles_fetched"] = len(articles)
     analysis["sources_used"] = sorted(set(a["source"] for a in articles))
     analysis["generated_at"] = datetime.now().isoformat()
+    analysis["investments"] = validate_buy_signals(
+        analysis.get("investments", []), build_corroboration_map(articles))
     _state["analysis"] = analysis
     _state["articles"] = articles
     _state["fetched_at"] = datetime.now().isoformat()

@@ -449,6 +449,47 @@
     </div>
   </div>
 
+  <div id="dcaSection" style="display:none">
+    <div class="budget-card">
+      <h2>Plan de Ahorro Mensual · Largo Plazo (DCA)</h2>
+      <p style="font-size:12px;color:var(--muted);margin:-10px 0 16px">Aportas cada mes y dejas que el interés compuesto trabaje. Núcleo estable + satélites de convicción.</p>
+      <div class="budget-inputs">
+        <div class="field">
+          <label>Aporte mensual</label>
+          <input type="number" id="dcaMonthly" value="200" min="10" step="50">
+        </div>
+        <div class="field">
+          <label>Ya ahorrado</label>
+          <input type="number" id="dcaCurrent" value="0" min="0" step="100">
+        </div>
+        <div class="field">
+          <label>Años</label>
+          <input type="number" id="dcaYears" value="10" min="1" max="40" step="1">
+        </div>
+        <div class="field">
+          <label>Perfil</label>
+          <select id="dcaProfile">
+            <option value="conservador">Conservador</option>
+            <option value="balanceado" selected>Balanceado</option>
+            <option value="agresivo">Agresivo</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Moneda</label>
+          <select id="dcaCurrency">
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="COP">COP</option>
+            <option value="MXN">MXN</option>
+            <option value="ARS">ARS</option>
+          </select>
+        </div>
+        <button class="btn" onclick="calcDca()">Proyectar</button>
+      </div>
+      <div id="dcaResult"></div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -585,6 +626,7 @@ function renderResults(data){
 
   document.getElementById('results').style.display='block';
   document.getElementById('budgetSection').style.display='block';
+  document.getElementById('dcaSection').style.display='block';
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
@@ -643,6 +685,74 @@ function renderBudget(data,box){
       </table>
     </div>
     <p style="font-size:11px;color:var(--subtle);margin-top:14px">${data.disclaimer||''}</p>`;
+}
+
+// ── DCA / Plan mensual largo plazo ──
+async function calcDca(){
+  const monthly=parseFloat(document.getElementById('dcaMonthly').value)||200;
+  const current=parseFloat(document.getElementById('dcaCurrent').value)||0;
+  const years=parseInt(document.getElementById('dcaYears').value)||10;
+  const profile=document.getElementById('dcaProfile').value;
+  const currency=document.getElementById('dcaCurrency').value;
+  const box=document.getElementById('dcaResult');
+  box.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0">Proyectando...</div>';
+  try{
+    const res=await fetch(`/api/dca?monthly=${monthly}&current=${current}&years=${years}&profile=${profile}&currency=${currency}`);
+    const data=await res.json();
+    if(data.error){box.innerHTML=`<p style="color:var(--red);font-size:13px">${data.error}</p>`;return;}
+    renderDca(data,box);
+  }catch(e){box.innerHTML=`<p style="color:var(--red);font-size:13px">Error: ${e.message}</p>`;}
+}
+
+function renderDca(data,box){
+  const fmt=n=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(n);
+  const rc={low:'var(--green)',medium:'var(--yellow)',high:'var(--red)'};
+  const cur=data.currency;
+  const p=data.projection;
+
+  const scenCard=(label,color,s)=>`
+    <div class="bstat" style="flex:1;min-width:150px">
+      <div class="bl">${label} · ${s.annual_return_pct}%/año</div>
+      <div class="bv" style="color:${color};font-size:22px">${fmt(s.future_value)} ${cur}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Ganancia +${fmt(s.profit)} · ×${s.multiple}</div>
+    </div>`;
+
+  const allocRow=(a,tag)=>`<tr>
+    <td>
+      <div style="font-weight:700;color:var(--text);font-size:14px">${a.asset} ${tag}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${(a.examples||[]).slice(0,3).join(' · ')}</div>
+    </td>
+    <td><div class="alloc-amount">${fmt(a.monthly_amount)} ${cur}</div><div class="alloc-meta">${a.pct_of_plan}% del aporte · /mes</div></td>
+    <td style="color:var(--green);font-size:11px">${a.expected_annual_return||'—'}</td>
+    <td style="color:${rc[a.risk]||'var(--muted)'};font-size:11px;font-weight:600;text-transform:uppercase">${a.risk||'—'}</td>
+    <td style="color:var(--muted);font-size:11px;max-width:260px">${(a.rationale||'').slice(0,160)}</td>
+  </tr>`;
+
+  const coreRows=data.core.map(a=>allocRow(a,'<span style="font-size:9px;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px;margin-left:4px">NÚCLEO</span>')).join('');
+  const satRows=data.satellites.map(a=>allocRow(a,'<span style="font-size:9px;color:var(--yellow);border:1px solid var(--yellow);border-radius:4px;padding:1px 5px;margin-left:4px">SATÉLITE</span>')).join('');
+
+  const trends=(data.secular_trends||[]).slice(0,3).map(t=>`<li style="margin-bottom:4px">${t}</li>`).join('');
+
+  box.innerHTML=`
+    <div class="budget-stats">
+      ${scenCard('Pesimista','var(--red)',p.pesimista)}
+      ${scenCard('Base','var(--accent)',p.base)}
+      ${scenCard('Optimista','var(--green)',p.optimista)}
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin:4px 0 18px">
+      Aportando <b style="color:var(--text)">${fmt(data.monthly)} ${cur}/mes</b> durante <b style="color:var(--text)">${data.years} años</b>
+      (perfil ${data.profile}: ${data.split.core_pct}% núcleo / ${data.split.satellite_pct}% satélite) ·
+      Total aportado: ${fmt(p.base.contributed)} ${cur} · Retorno esperado ponderado: ${data.weighted_expected_return}%/año
+    </div>
+    ${data.dca_guidance?`<div style="background:var(--raised);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text);margin-bottom:18px"><b>Estrategia:</b> ${data.dca_guidance}</div>`:''}
+    <div class="budget-table-wrap">
+      <table class="budget-table">
+        <thead><tr><th>Activo</th><th>Aporte mensual</th><th>Retorno esp.</th><th>Riesgo</th><th>Razón</th></tr></thead>
+        <tbody>${coreRows}${satRows}</tbody>
+      </table>
+    </div>
+    ${trends?`<div style="margin-top:16px"><div class="bl" style="margin-bottom:6px">Megatendencias estructurales</div><ul style="font-size:12px;color:var(--muted);padding-left:18px">${trends}</ul></div>`:''}
+    <p style="font-size:11px;color:var(--subtle);margin-top:14px">${data.note||''} Proyección de interés compuesto; rendimientos no garantizados. ${data.disclaimer||''}</p>`;
 }
 </script>
 </body>
