@@ -514,6 +514,11 @@ function toggleTheme() {
   document.documentElement.setAttribute('data-theme', saved);
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('themeBtn').textContent = saved === 'dark' ? '☀️' : '🌙';
+    // Restore last analysis so projecting works after a refresh (no re-analyze needed)
+    try{
+      const cached=JSON.parse(localStorage.getItem('investai_analysis')||'null');
+      if(cached && cached.investments){ window.__analysis=cached; renderResults(cached); }
+    }catch(e){}
   });
 })();
 
@@ -557,6 +562,8 @@ async function runAnalysis(mode='ai') {
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data=await res.json();
     if(data.error) throw new Error(data.error);
+    window.__analysis=data;
+    try{ localStorage.setItem('investai_analysis', JSON.stringify(data)); }catch(e){}
     renderResults(data);
   }catch(e){
     alert(`Error: ${e.message}`);
@@ -644,8 +651,14 @@ async function calcBudget(){
   const currency=document.getElementById('currencyInput').value;
   const box=document.getElementById('budgetResult');
   box.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0">Calculando...</div>';
+  let analysis=window.__analysis;
+  if(!analysis){ try{ analysis=JSON.parse(localStorage.getItem('investai_analysis')||'null'); }catch(e){} }
   try{
-    const res=await fetch(`/api/portfolio?budget=${budget}&currency=${currency}`);
+    const res=await fetch('/api/portfolio',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({budget,currency,analysis})
+    });
     const data=await res.json();
     if(data.error){box.innerHTML=`<p style="color:var(--red);font-size:13px">${data.error}</p>`;return;}
     renderBudget(data,box);
@@ -706,8 +719,15 @@ async function calcDca(){
   const currency=document.getElementById('dcaCurrency').value;
   const box=document.getElementById('dcaResult');
   box.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0">Proyectando...</div>';
+  // Use the analysis the client already holds (serverless-safe — avoids "vuelve a analizar")
+  let analysis=window.__analysis;
+  if(!analysis){ try{ analysis=JSON.parse(localStorage.getItem('investai_analysis')||'null'); }catch(e){} }
   try{
-    const res=await fetch(`/api/dca?monthly=${monthly}&current=${current}&years=${years}&profile=${profile}&currency=${currency}&step_up=${stepUp}&inflation=${inflation}`);
+    const res=await fetch('/api/dca',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({monthly,current,years,profile,currency,step_up:stepUp,inflation,analysis})
+    });
     const data=await res.json();
     if(data.error){box.innerHTML=`<p style="color:var(--red);font-size:13px">${data.error}</p>`;return;}
     renderDca(data,box);

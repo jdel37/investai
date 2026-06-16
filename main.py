@@ -10,7 +10,7 @@ import re
 from dotenv import load_dotenv
 from datetime import datetime
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -1173,16 +1173,8 @@ async def status():
     }
 
 
-@app.get("/api/portfolio")
-async def portfolio(budget: float = 1000.0, currency: str = "USD"):
-    """Given a budget, return personalized allocation based on current analysis."""
-    analysis = _state.get("analysis")
-    if not analysis or not analysis.get("investments"):
-        return JSONResponse(
-            {"error": "Sin análisis. Ejecuta 'Analizar' primero."},
-            status_code=400
-        )
-
+def _compute_portfolio(analysis: dict, budget: float = 1000.0, currency: str = "USD") -> dict:
+    """Given a budget, return personalized allocation based on the analysis."""
     investments = analysis["investments"]
     # Use AI-assigned portfolio_weight if available, else distribute by priority
     weights = []
@@ -1209,12 +1201,12 @@ async def portfolio(budget: float = 1000.0, currency: str = "USD"):
         if amount <= 0:
             continue
         allocations.append({
-            "asset": inv["asset"],
-            "type": inv["type"],
-            "signal": inv["signal"],
-            "priority": inv["priority"],
-            "risk": inv["risk"],
-            "timeframe": inv["timeframe"],
+            "asset": inv.get("asset", "—"),
+            "type": inv.get("type", ""),
+            "signal": inv.get("signal", "watch"),
+            "priority": inv.get("priority", 5),
+            "risk": inv.get("risk", "medium"),
+            "timeframe": inv.get("timeframe", "long"),
             "pct": pct,
             "amount": amount,
             "currency": currency,
@@ -1238,6 +1230,28 @@ async def portfolio(budget: float = 1000.0, currency: str = "USD"):
         "generated_at": analysis.get("generated_at", ""),
         "disclaimer": analysis.get("disclaimer", ""),
     }
+
+
+@app.get("/api/portfolio")
+async def portfolio_get(budget: float = 1000.0, currency: str = "USD"):
+    analysis = _resolve_analysis(None)
+    if not analysis:
+        return JSONResponse({"error": "Sin análisis. Ejecuta 'Analizar' primero."}, status_code=400)
+    return _compute_portfolio(analysis, budget, currency)
+
+
+class PortfolioReq(BaseModel):
+    budget: float = 1000.0
+    currency: str = "USD"
+    analysis: Optional[dict] = None
+
+
+@app.post("/api/portfolio")
+async def portfolio_post(req: PortfolioReq):
+    analysis = _resolve_analysis(req.analysis)
+    if not analysis:
+        return JSONResponse({"error": "Sin análisis. Ejecuta 'Analizar' primero."}, status_code=400)
+    return _compute_portfolio(analysis, req.budget, req.currency)
 
 
 # ─── DCA / LONG-TERM PLAN ─────────────────────────────────────────────────────
@@ -1452,18 +1466,14 @@ async def _fx_rate(currency: str) -> float:
     return FX_FALLBACK.get(cur, 1.0)
 
 
-@app.get("/api/dca")
-async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
-              profile: str = "balanceado", currency: str = "USD",
-              step_up: float = 0.0, inflation: float = 0.0):
+async def _compute_dca(analysis: dict, monthly: float = 200.0, years: int = 10,
+                       current: float = 0.0, profile: str = "balanceado",
+                       currency: str = "USD", step_up: float = 0.0,
+                       inflation: float = 0.0) -> dict:
     """Long-term monthly savings plan: núcleo/satélite split + compound-interest projection.
 
     step_up  = % anual de aumento del aporte mensual (subes lo que ahorras cada año).
     inflation = % inflación anual para mostrar el valor REAL (poder adquisitivo futuro)."""
-    analysis = _state.get("analysis")
-    if not analysis or not analysis.get("investments"):
-        return JSONResponse({"error": "Sin análisis. Ejecuta 'Analizar' primero."}, status_code=400)
-
     # Inputs are USD base; convert to the chosen display currency. Returns are %,
     # so converting the contributions up front carries through the whole projection.
     fx = await _fx_rate(currency)
@@ -1596,6 +1606,49 @@ async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
         "disclaimer": analysis.get("disclaimer", ""),
         "note": "Usando núcleo del análisis IA." if analysis.get("long_term_core") else "Usando núcleo diversificado por defecto.",
     }
+
+
+def _resolve_analysis(provided: dict | None) -> dict | None:
+    """Prefer the analysis the client already holds (serverless-safe: server _state
+    may be cold/empty on a different instance), else fall back to in-memory state."""
+    if provided and provided.get("investments"):
+        return provided
+    cached = _state.get("analysis")
+    if cached and cached.get("investments"):
+        return cached
+    return None
+
+
+@app.get("/api/dca")
+async def dca_get(monthly: float = 200.0, years: int = 10, current: float = 0.0,
+                  profile: str = "balanceado", currency: str = "USD",
+                  step_up: float = 0.0, inflation: float = 0.0):
+    analysis = _resolve_analysis(None)
+    if not analysis:
+        return JSONResponse({"error": "Sin análisis. Ejecuta 'Analizar' primero."}, status_code=400)
+    return await _compute_dca(analysis, monthly, years, current, profile, currency, step_up, inflation)
+
+
+class DcaReq(BaseModel):
+    monthly: float = 200.0
+    years: int = 10
+    current: float = 0.0
+    profile: str = "balanceado"
+    currency: str = "USD"
+    step_up: float = 0.0
+    inflation: float = 0.0
+    analysis: Optional[dict] = None
+
+
+@app.post("/api/dca")
+async def dca_post(req: DcaReq):
+    # Stateless path: the frontend sends the analysis it received from /api/analyze,
+    # so re-projecting (changing savings, step-up, currency…) never needs a re-analyze.
+    analysis = _resolve_analysis(req.analysis)
+    if not analysis:
+        return JSONResponse({"error": "Sin análisis. Ejecuta 'Analizar' primero."}, status_code=400)
+    return await _compute_dca(analysis, req.monthly, req.years, req.current,
+                              req.profile, req.currency, req.step_up, req.inflation)
 
 
 @app.get("/api/scheduled-analysis")
