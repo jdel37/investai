@@ -455,11 +455,11 @@
       <p style="font-size:12px;color:var(--muted);margin:-10px 0 16px">Aportas cada mes y dejas que el interés compuesto trabaje. Núcleo estable + satélites de convicción.</p>
       <div class="budget-inputs">
         <div class="field">
-          <label>Aporte mensual</label>
+          <label>Aporte mensual (USD)</label>
           <input type="number" id="dcaMonthly" value="200" min="10" step="50">
         </div>
         <div class="field">
-          <label>Ya ahorrado</label>
+          <label>Ya ahorrado (USD)</label>
           <input type="number" id="dcaCurrent" value="0" min="0" step="100">
         </div>
         <div class="field">
@@ -755,6 +755,7 @@ function renderDca(data,box){
       Aportando <b style="color:var(--text)">${fmt(data.monthly)} ${cur}/mes</b>${data.step_up_pct>0?` (subiendo ${data.step_up_pct}%/año → <b style="color:var(--text)">${fmt(data.final_monthly)} ${cur}/mes</b> al final)`:''} durante <b style="color:var(--text)">${data.years} años</b>
       · perfil ${data.profile}: ${data.split.core_pct}% núcleo / ${data.split.satellite_pct}% satélite
       · Total aportado: ${fmt(p.base.contributed)} ${cur} · Retorno esperado: ${data.weighted_expected_return}%/año
+      ${data.fx_rate&&data.fx_rate!==1?`<br><span style="color:var(--subtle)">Montos en USD convertidos a ${cur} · 1 USD = ${fmt(data.fx_rate)} ${cur}</span>`:''}
     </div>
     <div class="budget-stats" style="margin-bottom:16px">
       <div class="bstat"><div class="bl">Volatilidad cartera</div><div class="bv" style="font-size:16px;color:${rc[data.risk.rating]||'var(--text)'}">${data.risk.portfolio_vol_pct}% · ${(data.risk.rating||'').toUpperCase()}</div></div>

@@ -1425,6 +1425,33 @@ def _project_dca(current: float, monthly: float, years: int, annual_pct: float,
     }
 
 
+# ─── FX (convert USD base → display currency) ─────────────────────────────────
+_FX_CACHE: dict = {}        # currency → (rate, ts)
+_FX_TTL = 6 * 3600
+FX_FALLBACK = {"USD": 1.0, "EUR": 0.92, "COP": 4000.0, "MXN": 17.0, "ARS": 1000.0}
+
+
+async def _fx_rate(currency: str) -> float:
+    """USD → currency rate. Live (open.er-api.com, no key), cached 6h, static fallback."""
+    cur = (currency or "USD").upper()
+    if cur == "USD":
+        return 1.0
+    now = datetime.now().timestamp()
+    hit = _FX_CACHE.get(cur)
+    if hit and now - hit[1] < _FX_TTL:
+        return hit[0]
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get("https://open.er-api.com/v6/latest/USD", timeout=6.0)
+            rate = float(r.json()["rates"][cur])
+            if rate > 0:
+                _FX_CACHE[cur] = (rate, now)
+                return rate
+    except Exception:
+        pass
+    return FX_FALLBACK.get(cur, 1.0)
+
+
 @app.get("/api/dca")
 async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
               profile: str = "balanceado", currency: str = "USD",
@@ -1437,8 +1464,11 @@ async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
     if not analysis or not analysis.get("investments"):
         return JSONResponse({"error": "Sin análisis. Ejecuta 'Analizar' primero."}, status_code=400)
 
-    monthly = max(0.0, float(monthly))
-    current = max(0.0, float(current))
+    # Inputs are USD base; convert to the chosen display currency. Returns are %,
+    # so converting the contributions up front carries through the whole projection.
+    fx = await _fx_rate(currency)
+    monthly = max(0.0, float(monthly)) * fx
+    current = max(0.0, float(current)) * fx
     years = max(1, min(40, int(years)))
     step_up = max(0.0, min(20.0, float(step_up)))
     inflation = max(0.0, min(20.0, float(inflation)))
@@ -1553,6 +1583,7 @@ async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
         "profile": profile if profile in RISK_PROFILES else "balanceado",
         "split": {"core_pct": round(core_share * 100), "satellite_pct": round(sat_share * 100)},
         "currency": currency,
+        "fx_rate": round(fx, 2),
         "weighted_expected_return": base_r,
         "core": core,
         "satellites": satellites,
