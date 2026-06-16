@@ -1262,6 +1262,10 @@ DEFAULT_CORE = [
 ]
 
 
+def fmt_money(n: float) -> str:
+    return f"{n:,.0f}"
+
+
 def _parse_pct(s, default=0.0) -> float:
     try:
         return float(re.sub(r"[^0-9.]", "", str(s)))
@@ -1287,7 +1291,7 @@ _NAME_TO_TICKER = {
     "microsoft": "MSFT", "amazon": "AMZN", "google": "GOOGL", "alphabet": "GOOGL",
     "meta": "META", "treasuries": "TLT", "bonds": "TLT", "bonos": "TLT",
 }
-_RISK_CACHE: dict = {}  # ticker → (annual_return_pct, annual_vol_pct, ts)
+_CLOSE_CACHE: dict = {}  # ticker → (closes_series, ts)
 _RISK_TTL = 6 * 3600
 
 
@@ -1299,83 +1303,136 @@ def _resolve_ticker(asset: str, examples: list) -> str | None:
     return _NAME_TO_TICKER.get((asset or "").lower().strip())
 
 
-def _ticker_stats(ticker: str):
-    """Annualized (return%, volatility%) from ~2y of daily closes. Cached. None on failure."""
+def _ticker_closes(ticker: str):
+    """~2y daily close series (pandas). Cached. None on failure/insufficient data."""
     if not HAS_YF or not ticker:
         return None
     now = datetime.now().timestamp()
-    hit = _RISK_CACHE.get(ticker)
-    if hit and now - hit[2] < _RISK_TTL:
-        return hit[0], hit[1]
+    hit = _CLOSE_CACHE.get(ticker)
+    if hit and now - hit[1] < _RISK_TTL:
+        return hit[0]
     try:
         hist = yf.Ticker(ticker).history(period="2y", interval="1d")
         closes = hist["Close"].dropna()
         if len(closes) < 60:
             return None
-        rets = closes.pct_change().dropna()
-        vol = float(rets.std() * (252 ** 0.5) * 100)
-        cagr = float((closes.iloc[-1] / closes.iloc[0]) ** (252 / len(closes)) - 1) * 100
-        _RISK_CACHE[ticker] = (round(cagr, 1), round(vol, 1), now)
-        return round(cagr, 1), round(vol, 1)
+        _CLOSE_CACHE[ticker] = (closes, now)
+        return closes
     except Exception:
         return None
 
 
+def _closes_stats(closes):
+    """(annualized return%, annualized vol%) from a close series."""
+    rets = closes.pct_change().dropna()
+    vol = float(rets.std() * (252 ** 0.5) * 100)
+    cagr = float((closes.iloc[-1] / closes.iloc[0]) ** (252 / len(closes)) - 1) * 100
+    return round(cagr, 1), round(vol, 1), rets
+
+
 def compute_portfolio_risk(holdings: list[dict]) -> dict:
-    """Given [{asset, examples, monthly_amount, expected_annual_return}], derive a
-    market-data-grounded volatility & risk rating. Falls back gracefully if yfinance down."""
+    """Market-data-grounded portfolio risk. Uses the CORRELATION between assets
+    (real covariance) so diversification reduces measured volatility — a simple
+    weighted average overstates risk. Falls back gracefully if yfinance is down."""
     total = sum(h.get("monthly_amount", 0) for h in holdings) or 1
-    wvol = 0.0
+    weights: dict[str, float] = {}
+    vols: dict[str, float] = {}
+    rets_map: dict = {}
     whist_ret = 0.0
     covered = 0.0
     per_asset = []
     for h in holdings:
+        name = h.get("asset", "")
         w = h.get("monthly_amount", 0) / total
-        ticker = _resolve_ticker(h.get("asset", ""), h.get("examples", []))
-        stats = _ticker_stats(ticker) if ticker else None
-        if stats:
-            ret, vol = stats
-            wvol += w * vol
-            whist_ret += w * ret
+        weights[name] = weights.get(name, 0) + w
+        ticker = _resolve_ticker(name, h.get("examples", []))
+        closes = _ticker_closes(ticker) if ticker else None
+        if closes is not None:
+            cagr, vol, rets = _closes_stats(closes)
+            vols[name] = vol
+            rets_map[name] = rets
+            whist_ret += w * cagr
             covered += w
-            per_asset.append({"asset": h.get("asset"), "ticker": ticker,
-                              "annual_vol_pct": vol, "hist_return_pct": ret})
+            per_asset.append({"asset": name, "ticker": ticker, "annual_vol_pct": vol,
+                              "hist_return_pct": cagr, "weight_pct": round(w * 100, 1)})
         else:
-            # fallback vol by qualitative risk
             qv = {"low": 12, "medium": 22, "high": 55}.get(h.get("risk", "medium"), 22)
-            wvol += w * qv
-    rating = "low" if wvol < 15 else "medium" if wvol < 30 else "high"
+            vols[name] = qv
+            per_asset.append({"asset": name, "ticker": ticker, "annual_vol_pct": qv,
+                              "hist_return_pct": None, "weight_pct": round(w * 100, 1),
+                              "estimated": True})
+
+    wavg_vol = sum(weights.get(n, 0) * v for n, v in vols.items())  # perfect-corr upper bound
+    pvol = wavg_vol
+    div_score = 0.0
+    if len(rets_map) >= 2:
+        try:
+            import pandas as pd
+            df = pd.DataFrame(rets_map).dropna()
+            cov = df.cov() * 252
+            names = list(df.columns)
+            cov_w = sum(weights.get(n, 0) for n in names) or 1
+            wv = [weights.get(n, 0) / cov_w for n in names]  # renormalize over covered set
+            var = sum(wv[a] * wv[b] * float(cov.iloc[a, b])
+                      for a in range(len(names)) for b in range(len(names)))
+            corr_pvol = (var ** 0.5) * 100
+            wavg_cov = sum(wv[a] * vols[names[a]] for a in range(len(names)))
+            if wavg_cov > 0:
+                div_score = max(0.0, min(1.0, (wavg_cov - corr_pvol) / wavg_cov))
+            cov_share = sum(weights.get(n, 0) for n in names)
+            pvol = corr_pvol * cov_share + wavg_vol * (1 - cov_share)
+        except Exception:
+            pvol = wavg_vol
+
+    max_w = max(weights.values()) if weights else 0
+    rating = "low" if pvol < 15 else "medium" if pvol < 30 else "high"
     return {
-        "portfolio_vol_pct": round(wvol, 1),
+        "portfolio_vol_pct": round(pvol, 1),
+        "weighted_vol_pct": round(wavg_vol, 1),
+        "diversification_score": round(div_score, 2),
+        "max_weight_pct": round(max_w * 100, 1),
+        "concentrated": max_w > 0.35,
         "coverage": round(covered, 2),
         "hist_return_pct": round(whist_ret / covered, 1) if covered > 0 else None,
         "rating": rating,
-        "per_asset": per_asset,
+        "per_asset": sorted(per_asset, key=lambda x: -x["weight_pct"]),
     }
 
 
-def _project_dca(current: float, monthly: float, years: int, annual_pct: float) -> dict:
-    """Future value of an initial lump + monthly contributions (annuity-due) compounding annually."""
+def _project_dca(current: float, monthly: float, years: int, annual_pct: float,
+                 step_up_pct: float = 0.0, inflation_pct: float = 0.0) -> dict:
+    """Future value of initial lump + monthly contributions, compounding monthly.
+    Supports annual step-up (raise contribution each year) and reports the
+    inflation-adjusted (real) value — what the money actually buys in the future."""
     i = annual_pct / 100 / 12
-    n = years * 12
-    if i == 0:
-        fv = current + monthly * n
-    else:
-        fv = current * (1 + i) ** n + monthly * (((1 + i) ** n - 1) / i) * (1 + i)
-    contributed = current + monthly * n
+    bal = float(current)
+    contributed = float(current)
+    m = float(monthly)
+    for _yr in range(int(years)):
+        for _mo in range(12):
+            bal = bal * (1 + i) + m       # contribute end of month, then compound
+            contributed += m
+        m *= (1 + step_up_pct / 100)      # raise next year's monthly contribution
+    real = bal / ((1 + inflation_pct / 100) ** years) if inflation_pct else bal
     return {
         "annual_return_pct": round(annual_pct, 1),
-        "future_value": round(fv, 2),
+        "future_value": round(bal, 2),
+        "real_future_value": round(real, 2),
         "contributed": round(contributed, 2),
-        "profit": round(fv - contributed, 2),
-        "multiple": round(fv / contributed, 2) if contributed > 0 else 0,
+        "profit": round(bal - contributed, 2),
+        "real_profit": round(real - contributed, 2),
+        "multiple": round(bal / contributed, 2) if contributed > 0 else 0,
     }
 
 
 @app.get("/api/dca")
 async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
-              profile: str = "balanceado", currency: str = "USD"):
-    """Long-term monthly savings plan: núcleo/satélite split + compound-interest projection."""
+              profile: str = "balanceado", currency: str = "USD",
+              step_up: float = 0.0, inflation: float = 0.0):
+    """Long-term monthly savings plan: núcleo/satélite split + compound-interest projection.
+
+    step_up  = % anual de aumento del aporte mensual (subes lo que ahorras cada año).
+    inflation = % inflación anual para mostrar el valor REAL (poder adquisitivo futuro)."""
     analysis = _state.get("analysis")
     if not analysis or not analysis.get("investments"):
         return JSONResponse({"error": "Sin análisis. Ejecuta 'Analizar' primero."}, status_code=400)
@@ -1383,6 +1440,8 @@ async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
     monthly = max(0.0, float(monthly))
     current = max(0.0, float(current))
     years = max(1, min(40, int(years)))
+    step_up = max(0.0, min(20.0, float(step_up)))
+    inflation = max(0.0, min(20.0, float(inflation)))
     core_share, sat_share = RISK_PROFILES.get(profile, RISK_PROFILES["balanceado"])
 
     # ── Núcleo: estable, baja rotación ──
@@ -1413,7 +1472,15 @@ async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
     tf_rank = {"long": 0, "medium": 1, "short": 2}
     sats.sort(key=lambda x: (tf_rank.get(x.get("timeframe"), 3), -x.get("priority", 0)))
     sats = sats[:6]
-    sat_weights = [_parse_pct(s.get("portfolio_weight"), 0) or s.get("priority", 5) for s in sats]
+    # Conviction weighting: signals that PERSIST across analyses (streak) and validated
+    # buys earn more capital — repeated multi-source confirmation = higher confidence.
+    sat_weights = []
+    for s in sats:
+        base = _parse_pct(s.get("portfolio_weight"), 0) or s.get("priority", 5)
+        conviction = 1 + 0.2 * min(s.get("streak", 0), 3)      # up to +60% for persistent picks
+        if s.get("validated_buy"):
+            conviction *= 1.15
+        sat_weights.append(base * conviction)
     sat_total = sum(sat_weights) or 1
     sat_budget = monthly * sat_share
     satellites = []
@@ -1455,16 +1522,32 @@ async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
     pess_r = max(0.0, base_r - band)
     opt_r = base_r + band
     scenarios = {
-        "pesimista":  _project_dca(current, monthly, years, pess_r),
-        "base":       _project_dca(current, monthly, years, base_r),
-        "optimista":  _project_dca(current, monthly, years, opt_r),
+        "pesimista":  _project_dca(current, monthly, years, pess_r, step_up, inflation),
+        "base":       _project_dca(current, monthly, years, base_r, step_up, inflation),
+        "optimista":  _project_dca(current, monthly, years, opt_r, step_up, inflation),
     }
     for k, prob in (("pesimista", "~16%"), ("base", "~50%"), ("optimista", "~16%")):
         scenarios[k]["probability"] = prob
 
+    final_monthly = round(monthly * (1 + step_up / 100) ** max(0, years - 1), 2)
+
+    # Rebalancing: with DCA you rebalance for free by steering each month's buy
+    # toward whatever is below target. Only force-sell-and-buy ~once a year.
+    rebalance_guidance = (
+        f"Aporta cada mes pase lo que pase ({round(core_share*100)}% al núcleo). "
+        "Rebalancea barato: dirige el aporte mensual hacia el activo que esté por debajo de su objetivo, "
+        "en vez de vender. Revisa pesos 1 vez al año y solo ajusta si algo se desvía >5 puntos. "
+        "En caídas fuertes, mantén el plan y, si puedes, acumula extra — el DCA compra más barato."
+    )
+    if step_up > 0:
+        rebalance_guidance += f" Subes el aporte {step_up:g}%/año (de {fmt_money(monthly)} a {fmt_money(final_monthly)}/mes) — acelera el interés compuesto."
+
     return {
         "risk": risk,
         "monthly": round(monthly, 2),
+        "final_monthly": final_monthly,
+        "step_up_pct": step_up,
+        "inflation_pct": inflation,
         "years": years,
         "current_savings": round(current, 2),
         "profile": profile if profile in RISK_PROFILES else "balanceado",
@@ -1475,6 +1558,7 @@ async def dca(monthly: float = 200.0, years: int = 10, current: float = 0.0,
         "satellites": satellites,
         "projection": scenarios,
         "dca_guidance": analysis.get("dca_guidance", ""),
+        "rebalance_guidance": rebalance_guidance,
         "secular_trends": analysis.get("secular_trends", []),
         "macro_regime": analysis.get("macro_regime", ""),
         "generated_at": analysis.get("generated_at", ""),

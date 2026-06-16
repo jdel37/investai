@@ -467,6 +467,14 @@
           <input type="number" id="dcaYears" value="10" min="1" max="40" step="1">
         </div>
         <div class="field">
+          <label>Subir aporte %/año</label>
+          <input type="number" id="dcaStepUp" value="5" min="0" max="20" step="1">
+        </div>
+        <div class="field">
+          <label>Inflación %/año</label>
+          <input type="number" id="dcaInflation" value="3" min="0" max="20" step="0.5">
+        </div>
+        <div class="field">
           <label>Perfil</label>
           <select id="dcaProfile">
             <option value="conservador">Conservador</option>
@@ -692,12 +700,14 @@ async function calcDca(){
   const monthly=parseFloat(document.getElementById('dcaMonthly').value)||200;
   const current=parseFloat(document.getElementById('dcaCurrent').value)||0;
   const years=parseInt(document.getElementById('dcaYears').value)||10;
+  const stepUp=parseFloat(document.getElementById('dcaStepUp').value)||0;
+  const inflation=parseFloat(document.getElementById('dcaInflation').value)||0;
   const profile=document.getElementById('dcaProfile').value;
   const currency=document.getElementById('dcaCurrency').value;
   const box=document.getElementById('dcaResult');
   box.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0">Proyectando...</div>';
   try{
-    const res=await fetch(`/api/dca?monthly=${monthly}&current=${current}&years=${years}&profile=${profile}&currency=${currency}`);
+    const res=await fetch(`/api/dca?monthly=${monthly}&current=${current}&years=${years}&profile=${profile}&currency=${currency}&step_up=${stepUp}&inflation=${inflation}`);
     const data=await res.json();
     if(data.error){box.innerHTML=`<p style="color:var(--red);font-size:13px">${data.error}</p>`;return;}
     renderDca(data,box);
@@ -710,11 +720,13 @@ function renderDca(data,box){
   const cur=data.currency;
   const p=data.projection;
 
+  const infl=data.inflation_pct>0;
   const scenCard=(label,color,s)=>`
-    <div class="bstat" style="flex:1;min-width:150px">
-      <div class="bl">${label} · ${s.annual_return_pct}%/año</div>
+    <div class="bstat" style="flex:1;min-width:160px">
+      <div class="bl">${label} · ${s.annual_return_pct}%/año · ${s.probability||''}</div>
       <div class="bv" style="color:${color};font-size:22px">${fmt(s.future_value)} ${cur}</div>
       <div style="font-size:11px;color:var(--muted);margin-top:4px">Ganancia +${fmt(s.profit)} · ×${s.multiple}</div>
+      ${infl?`<div style="font-size:11px;color:var(--subtle);margin-top:3px">Valor real (hoy): <b style="color:${color}">${fmt(s.real_future_value)} ${cur}</b></div>`:''}
     </div>`;
 
   const allocRow=(a,tag)=>`<tr>
@@ -739,12 +751,18 @@ function renderDca(data,box){
       ${scenCard('Base','var(--accent)',p.base)}
       ${scenCard('Optimista','var(--green)',p.optimista)}
     </div>
-    <div style="font-size:12px;color:var(--muted);margin:4px 0 18px">
-      Aportando <b style="color:var(--text)">${fmt(data.monthly)} ${cur}/mes</b> durante <b style="color:var(--text)">${data.years} años</b>
-      (perfil ${data.profile}: ${data.split.core_pct}% núcleo / ${data.split.satellite_pct}% satélite) ·
-      Total aportado: ${fmt(p.base.contributed)} ${cur} · Retorno esperado ponderado: ${data.weighted_expected_return}%/año
+    <div style="font-size:12px;color:var(--muted);margin:4px 0 14px">
+      Aportando <b style="color:var(--text)">${fmt(data.monthly)} ${cur}/mes</b>${data.step_up_pct>0?` (subiendo ${data.step_up_pct}%/año → <b style="color:var(--text)">${fmt(data.final_monthly)} ${cur}/mes</b> al final)`:''} durante <b style="color:var(--text)">${data.years} años</b>
+      · perfil ${data.profile}: ${data.split.core_pct}% núcleo / ${data.split.satellite_pct}% satélite
+      · Total aportado: ${fmt(p.base.contributed)} ${cur} · Retorno esperado: ${data.weighted_expected_return}%/año
     </div>
-    ${data.dca_guidance?`<div style="background:var(--raised);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text);margin-bottom:18px"><b>Estrategia:</b> ${data.dca_guidance}</div>`:''}
+    <div class="budget-stats" style="margin-bottom:16px">
+      <div class="bstat"><div class="bl">Volatilidad cartera</div><div class="bv" style="font-size:16px;color:${rc[data.risk.rating]||'var(--text)'}">${data.risk.portfolio_vol_pct}% · ${(data.risk.rating||'').toUpperCase()}</div></div>
+      <div class="bstat"><div class="bl">Diversificación</div><div class="bv" style="font-size:16px;color:${data.risk.diversification_score>=0.2?'var(--green)':'var(--yellow)'}">${Math.round((data.risk.diversification_score||0)*100)}%</div></div>
+      <div class="bstat"><div class="bl">Mayor posición</div><div class="bv" style="font-size:16px;color:${data.risk.concentrated?'var(--red)':'var(--text)'}">${data.risk.max_weight_pct}%${data.risk.concentrated?' ⚠':''}</div></div>
+    </div>
+    ${data.dca_guidance?`<div style="background:var(--raised);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text);margin-bottom:12px"><b>Estrategia:</b> ${data.dca_guidance}</div>`:''}
+    ${data.rebalance_guidance?`<div style="background:var(--raised);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text);margin-bottom:18px"><b>Disciplina & rebalanceo:</b> ${data.rebalance_guidance}</div>`:''}
     <div class="budget-table-wrap">
       <table class="budget-table">
         <thead><tr><th>Activo</th><th>Aporte mensual</th><th>Retorno esp.</th><th>Riesgo</th><th>Razón</th></tr></thead>
