@@ -741,12 +741,13 @@ function renderDca(data,box){
   const p=data.projection;
 
   const infl=data.inflation_pct>0;
+  const endYear=new Date().getFullYear()+data.years;
   const scenCard=(label,color,s)=>`
     <div class="bstat" style="flex:1;min-width:160px">
       <div class="bl">${label} · ${s.annual_return_pct}%/año · ${s.probability||''}</div>
       <div class="bv" style="color:${color};font-size:22px">${fmt(s.future_value)} ${cur}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:3px">en tu cuenta · ganancia +${fmt(s.profit)} · ×${s.multiple}</div>
-      ${infl?`<div style="font-size:11px;color:var(--subtle);margin-top:5px;border-top:1px solid var(--border);padding-top:5px">≈ <b style="color:${color}">${fmt(s.real_future_value)} ${cur}</b> en poder de compra de <b>hoy</b></div>`:''}
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">en el año ${endYear} · ganancia +${fmt(s.profit)} · ×${s.multiple}</div>
+      ${infl?`<div style="font-size:11px;color:var(--subtle);margin-top:5px;border-top:1px solid var(--border);padding-top:5px">eso equivale a <b style="color:${color}">${fmt(s.real_future_value)} ${cur}</b> de <b>hoy</b> (mismo poder de compra)</div>`:''}
     </div>`;
 
   const allocRow=(a,tag)=>`<tr>
@@ -772,8 +773,8 @@ function renderDca(data,box){
       ${scenCard('Optimista','var(--green)',p.optimista)}
     </div>
     ${infl?`<div style="font-size:11.5px;color:var(--muted);background:var(--raised);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin:2px 0 14px;line-height:1.5">
-      💡 El número grande es lo <b>nominal</b>: la cifra que verás en tu cuenta dentro de ${data.years} años. El segundo descuenta la inflación (${data.inflation_pct}%/año) y por eso es <b>menor</b> — es lo que esa plata <b>realmente podrá comprar</b> en dinero de hoy. Es correcto que sea menor: la inflación resta poder de compra con el tiempo.
-    </div>`:`<div style="font-size:11.5px;color:var(--subtle);margin:2px 0 14px">Pon un % de inflación para ver el valor en poder de compra de hoy.</div>`}
+      💡 El número grande <b>SÍ es</b> lo que tendrás al final, en el año ${endYear} (dinero de ese momento). La segunda línea solo lo <b>traduce a dinero de hoy</b>: como en ${data.years} años los precios suben (~${data.inflation_pct}%/año), ${fmt(p.base.future_value)} ${cur} de ${endYear} comprarán lo mismo que ${fmt(p.base.real_future_value)} ${cur} hoy. Sirve para que dimensiones la cifra en términos actuales — no es que tengas menos.
+    </div>`:`<div style="font-size:11.5px;color:var(--subtle);margin:2px 0 14px">Pon un % de inflación para ver cuánto valdría en dinero de hoy.</div>`}
     <div style="font-size:12px;color:var(--muted);margin:4px 0 14px">
       Aportando <b style="color:var(--text)">${fmt(data.monthly)} ${cur}/mes</b>${data.step_up_pct>0?` (subiendo ${data.step_up_pct}%/año → <b style="color:var(--text)">${fmt(data.final_monthly)} ${cur}/mes</b> al final)`:''} durante <b style="color:var(--text)">${data.years} años</b>
       · perfil ${data.profile}: ${data.split.core_pct}% núcleo / ${data.split.satellite_pct}% satélite
